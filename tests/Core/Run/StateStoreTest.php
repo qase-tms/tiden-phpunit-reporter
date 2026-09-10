@@ -189,13 +189,14 @@ final class StateStoreTest extends TestCase
 
     /**
      * An explicit TIDEN_STATE_FILE is reused across invocations, so a file left
-     * by the previous run must not hand this one an old run id.
+     * by the previous run must not hand this one an old run id — but only when
+     * that invocation is provably gone (its shared parent is no longer alive).
      */
-    public function test_a_file_left_by_a_previous_invocation_does_not_leak_its_run_id(): void
+    public function test_a_file_left_by_a_dead_invocation_does_not_leak_its_run_id(): void
     {
         file_put_contents($this->path, json_encode([
             'runId' => 111,
-            'owner' => 987654321,
+            'owner' => self::DEAD_PID,
             'completed' => true,
             'workers' => [],
         ]));
@@ -204,6 +205,27 @@ final class StateStoreTest extends TestCase
 
         $this->assertSame(222, $handle->runSeq);
         $this->assertFalse($handle->alreadyCompleted);
+    }
+
+    /**
+     * The asymmetry that decides the default. Adopting a run that turns out to
+     * be someone else's makes results be rejected — loud and recoverable.
+     * Starting a second run splits one invocation across two runs that each
+     * look complete. So an owner we cannot prove is gone is adopted, not reset.
+     */
+    public function test_an_owner_that_is_still_alive_is_adopted_rather_than_replaced(): void
+    {
+        file_put_contents($this->path, (string) json_encode([
+            'runId' => 111,
+            // A live process that is not this one's parent.
+            'owner' => getmypid(),
+            'completed' => false,
+            'workers' => [],
+        ]));
+
+        $handle = $this->store()->startRun(1201, static fn (): int => 222);
+
+        $this->assertSame(111, $handle->runSeq, 'no second run is opened on a guess');
     }
 
     public function test_workers_of_one_invocation_share_the_run(): void

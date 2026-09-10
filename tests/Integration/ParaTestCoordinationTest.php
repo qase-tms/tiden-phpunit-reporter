@@ -146,25 +146,35 @@ final class ParaTestCoordinationTest extends TestCase
         $this->assertSame(1, $this->countPaths($requests, '/runs'), 'still exactly one run');
     }
 
+    /**
+     * Spawns workers with proc_open's ARRAY form, so no shell sits between this
+     * process and the worker. With the string form /bin/sh -c becomes the
+     * worker's parent, which is not how ParaTest spawns workers and changes the
+     * very thing this test is about — the parent every worker shares.
+     */
     private function runWorkersConcurrently(int $count): void
     {
         $root = dirname(__DIR__, 2);
         $processes = [];
+        $pipes = [];
 
         for ($i = 0; $i < $count; $i++) {
-            $command = sprintf(
-                'TIDEN_MODE=tiden TIDEN_BASE_URL=%s TIDEN_API_TOKEN=tfy_stub TIDEN_PRODUCT_ID=p1 '.
-                'TIDEN_STATE_FILE=%s TIDEN_ROOT_DIR=%s TEST_TOKEN=%d %s %s -c %s --no-coverage',
-                escapeshellarg('http://127.0.0.1:'.$this->port),
-                escapeshellarg($this->stateFile),
-                escapeshellarg($root),
-                $i,
-                escapeshellarg(PHP_BINARY),
-                escapeshellarg($root.'/vendor/bin/phpunit'),
-                escapeshellarg($root.'/examples/phpunit.xml'),
-            );
+            $env = getenv();
+            $env['TIDEN_MODE'] = 'tiden';
+            $env['TIDEN_BASE_URL'] = 'http://127.0.0.1:'.$this->port;
+            $env['TIDEN_API_TOKEN'] = 'tfy_stub';
+            $env['TIDEN_PRODUCT_ID'] = 'p1';
+            $env['TIDEN_STATE_FILE'] = $this->stateFile;
+            $env['TIDEN_ROOT_DIR'] = $root;
+            $env['TEST_TOKEN'] = (string) $i;
 
-            $processes[] = proc_open($command, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes[$i]);
+            $processes[] = proc_open(
+                [PHP_BINARY, $root.'/vendor/bin/phpunit', '-c', $root.'/examples/phpunit.xml', '--no-coverage'],
+                [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+                $pipes[$i],
+                $root,
+                $env,
+            );
         }
 
         foreach ($processes as $index => $process) {
@@ -183,16 +193,15 @@ final class ParaTestCoordinationTest extends TestCase
         for ($attempt = 0; $attempt < 20; $attempt++) {
             $port = random_int(20000, 60000);
 
+            $env = getenv();
+            $env['TIDEN_STUB_LOG'] = $this->log;
+
             $process = proc_open(
-                sprintf(
-                    'TIDEN_STUB_LOG=%s %s -S 127.0.0.1:%d %s',
-                    escapeshellarg($this->log),
-                    escapeshellarg(PHP_BINARY),
-                    $port,
-                    escapeshellarg($root.'/tests/Integration/stub-server.php'),
-                ),
+                [PHP_BINARY, '-S', '127.0.0.1:'.$port, $root.'/tests/Integration/stub-server.php'],
                 [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
                 $pipes,
+                $root,
+                $env,
             );
 
             if (! is_resource($process)) {

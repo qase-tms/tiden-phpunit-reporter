@@ -79,11 +79,7 @@ final class StateStore
     public function startRun(int $pid, callable $createRun): RunHandle
     {
         return $this->withLock(function (array $state) use ($pid, $createRun): array {
-            // An explicit TIDEN_STATE_FILE is reused across invocations, so a
-            // file left by a previous one must not hand this run its run id.
-            // Workers of one invocation share a parent; a later invocation does
-            // not.
-            if (($state['owner'] ?? null) !== self::owner()) {
+            if (self::isStale($state)) {
                 $state = self::emptyState();
             }
 
@@ -266,6 +262,32 @@ final class StateStore
     private static function emptyState(): array
     {
         return ['runId' => null, 'owner' => self::owner(), 'completed' => false, 'workers' => []];
+    }
+
+    /**
+     * Is this file a leftover from an earlier invocation?
+     *
+     * Only a POSITIVE answer resets it. The two failure modes are not
+     * symmetric: wrongly adopting an old run makes every result be rejected,
+     * which is loud and recoverable, while wrongly starting a fresh one splits
+     * a single ParaTest invocation across two runs that each look complete. So
+     * anything short of proof that the previous invocation is gone adopts.
+     *
+     * Proof is that the recorded owner — the parent every worker of that
+     * invocation shared — is no longer running. Without ext-posix there is no
+     * proof available, and the file is adopted.
+     *
+     * @param  array<string, mixed>  $state
+     */
+    private static function isStale(array $state): bool
+    {
+        $owner = $state['owner'] ?? null;
+
+        if (! is_int($owner) || $owner === self::owner()) {
+            return false;
+        }
+
+        return ! self::isAlive($owner);
     }
 
     /**
