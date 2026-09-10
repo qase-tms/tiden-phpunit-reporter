@@ -1,0 +1,56 @@
+name: CI
+
+# Tests + composer manifest validation across the supported PHP x PHPUnit range.
+# No publish step: Packagist auto-updates from this public repo on a git tag
+# (one-time GitHub integration), so releasing is `git tag vX.Y.Z && git push --tags`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }} / PHPUnit ${{ matrix.phpunit }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4']
+        phpunit: ['^10.5', '^11.0', '^12.0']
+        exclude:
+          # PHPUnit 12 requires PHP >= 8.3.
+          - php: '8.2'
+            phpunit: '^12.0'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, json, posix
+          coverage: none
+          tools: composer:v2
+      - run: composer validate --strict --no-check-publish
+      # `--with` pins one major out of the root range; the constraint is a subset
+      # of composer.json's, so the matrix tests what the manifest actually claims.
+      - run: composer update --no-interaction --no-progress --prefer-dist --with="phpunit/phpunit:${{ matrix.phpunit }}"
+      - run: composer lint
+      - run: composer analyse
+      - run: composer test
+
+  lint-without-posix:
+    name: ext-posix absent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.3'
+          extensions: curl, json
+          ini-values: disable_functions=posix_kill,posix_getppid
+          coverage: none
+          tools: composer:v2
+      - run: composer install --no-interaction --no-progress
+      # ext-posix is only a `suggest`; the reporter must still work single-process
+      # without it. This job is what keeps that claim honest.
+      - run: composer test
