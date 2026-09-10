@@ -1,0 +1,268 @@
+[
+    {
+        "id": "<uuid>",
+        "title": "A named case",
+        "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_carries_metadata",
+        "execution": {
+            "status": "passed",
+            "startTime": "<time>",
+            "duration": "<ms>",
+            "endTime": "<time>"
+        },
+        "suitePath": [
+            {
+                "title": "Examples suite"
+            },
+            {
+                "title": "Tiden"
+            },
+            {
+                "title": "PHPUnitReporter"
+            },
+            {
+                "title": "Examples"
+            },
+            {
+                "title": "ExampleTest"
+            }
+        ],
+        "defect": false,
+        "fields": {
+            "layer": "unit",
+            "file_path": "examples/ExampleTest.php",
+            "tags": "smoke,billing"
+        },
+        "message": "a comment from inside the test"
+    },
+    {
+        "id": "<uuid>",
+        "title": "test_it_fails_an_assertion",
+        "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_fails_an_assertion",
+        "execution": {
+            "status": "failed",
+            "startTime": "<time>",
+            "duration": "<ms>",
+            "endTime": "<time>",
+            "stacktrace": "<stacktrace>"
+        },
+        "suitePath": [
+            {
+                "title": "Examples suite"
+            },
+            {
+                "title": "Tiden"
+            },
+            {
+                "title": "PHPUnitReporter"
+            },
+            {
+                "title": "Examples"
+            },
+            {
+                "title": "ExampleTest"
+            }
+        ],
+        "defect": false,
+        "fields": {
+            "file_path": "examples/ExampleTest.php"
+        },
+        "message": "Failed asserting that two strings are identical."
+    },
+    {
+        "id": "<uuid>",
+        "title": "test_it_is_filed_under_a_custom_suite",
+        "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_is_filed_under_a_custom_suite",
+        "execution": {
+            "status": "passed",
+            "startTime": "<time>",
+            "duration": "<ms>",
+            "endTime": "<time>"
+        },
+        "suitePath": [
+            {
+                "title": "Examples suite"
+            },
+            {
+                "title": "Billing"
+            },
+            {
+                "title": "Invoices"
+            }
+        ],
+        "defect": false,
+        "fields": {
+            "file_path": "examples/ExampleTest.php"
+        }
+    },
+    {
+        "id": "<uuid>",
+        "title": "test_it_is_skipped",
+        "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_is_skipped",
+        "execution": {
+            "status": "skipped",
+            "startTime": "<time>",
+            "duration": "<ms>",
+            "endTime": "<time>"
+        },
+        "suitePath": [
+            {
+                "title": "Examples suite"
+            },
+            {
+                "title": "Tiden"
+            },
+            {
+                "title": "PHPUnitReporter"
+            },
+            {
+                "title": "Examples"
+            },
+            {
+                "title": "ExampleTest"
+            }
+        ],
+        "defect": false,
+        "fields": {
+            "file_path": "examples/ExampleTest.php"
+        },
+        "message": "not applicable here"
+    },
+    {
+        "id": "<uuid>",
+        "title": "test_it_passes",
+        "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_passes",
+        "execution": {
+            "status": "passed",
+            "startTime": "<time>",
+            "duration": "<ms>",
+            "endTime": "<time>"
+        },
+        "suitePath": [
+            {
+                "title": "Examples suite"
+            },
+            {
+                "title": "Tiden"
+            },
+            {
+                "title": "PHPUnitReporter"
+            },
+            {
+                "title": "Examples"
+            },
+            {
+                "title": "ExampleTest"
+            }
+        ],
+        "defect": false,
+        "fields": {
+            "file_path": "examples/ExampleTest.php"
+        }
+    },
+    {
+        "id": "<uuid>",
+        "title": "test_it_runs_once_per_row",
+        "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_runs_once_per_row",
+        "execution": {
+            "status": "passed",
+            "startTime": "<time>",
+            "duration": "<ms>",
+            "endTime": "<time>"
+        },
+        "suitePath": [
+            {
+                "title": "Examples suite"
+            },
+            {
+                "title": "Tiden"
+            },
+            {
+                "title": "PHPUnitReporter"
+            },
+            {
+                "title": "Examples"
+            },
+            {
+                "title": "ExampleTest"
+            }
+        ],
+        "defect": false,
+        "fields": {
+            "file_path": "examples/ExampleTest.php"
+        },
+        "params": {
+            "dataset": "doubles three",
+            "data": "<data>"
+        }
+    },
+    {
+        "id": "<uuid>",
+        "title": "test_it_runs_once_per_row",
+        "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_runs_once_per_row",
+        "execution": {
+            "status": "passed",
+            "startTime": "<time>",
+            "duration": "<ms>",
+            "endTime": "<time>"
+        },
+        "suitePath": [
+            {
+                "title": "Examples suite"
+            },
+            {
+                "title": "Tiden"
+            },
+            {
+                "title": "PHPUnitReporter"
+            },
+            {
+                "title": "Examples"
+            },
+            {
+                "title": "ExampleTest"
+            }
+        ],
+        "defect": false,
+        "fields": {
+            "file_path": "examples/ExampleTest.php"
+        },
+        "params": {
+            "dataset": "doubles two",
+            "data": "<data>"
+        }
+    },
+    {
+        "id": "<uuid>",
+        "title": "test_it_throws_before_asserting",
+        "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_throws_before_asserting",
+        "execution": {
+            "status": "invalid",
+            "startTime": "<time>",
+            "duration": "<ms>",
+            "endTime": "<time>",
+            "stacktrace": "<stacktrace>"
+        },
+        "suitePath": [
+            {
+                "title": "Examples suite"
+            },
+            {
+                "title": "Tiden"
+            },
+            {
+                "title": "PHPUnitReporter"
+            },
+            {
+                "title": "Examples"
+            },
+            {
+                "title": "ExampleTest"
+            }
+        ],
+        "defect": false,
+        "fields": {
+            "file_path": "examples/ExampleTest.php"
+        },
+        "message": "production code exploded"
+    }
+]

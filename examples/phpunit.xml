@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Runs the example suite with the Tiden extension loaded. Used by the golden
+    integration test; also the smallest complete example of registering the
+    reporter.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="../vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="../vendor/autoload.php"
+         colors="false"
+         cacheDirectory="../.phpunit.cache">
+    <testsuites>
+        <testsuite name="Examples">
+            <directory>.</directory>
+        </testsuite>
+    </testsuites>
+    <extensions>
+        <bootstrap class="Tiden\PHPUnitReporter\TidenExtension">
+            <parameter name="TIDEN_ROOT_SUITE" value="Examples suite"/>
+        </bootstrap>
+    </extensions>
+</phpunit>
