@@ -11,6 +11,16 @@
             <directory>tests</directory>
         </testsuite>
     </testsuites>
+    <!--
+        The reporter reports its own test suite. Inert unless TIDEN_MODE is set,
+        so `composer test` is unchanged for contributors — and the package is
+        its own first consumer.
+    -->
+    <extensions>
+        <bootstrap class="Tiden\PHPUnitReporter\TidenExtension">
+            <parameter name="TIDEN_ROOT_SUITE" value="tiden/phpunit-reporter"/>
+        </bootstrap>
+    </extensions>
     <source>
         <include>
             <directory>src</directory>
