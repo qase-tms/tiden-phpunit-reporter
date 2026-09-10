@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tiden\PHPUnitReporter\Tests\Core\Run;
 
 use PHPUnit\Framework\TestCase;
+use Tiden\PHPUnitReporter\Core\Run\ProcessProbe;
 use Tiden\PHPUnitReporter\Core\Run\StateStore;
+use Tiden\PHPUnitReporter\Tests\Support\FakeProcessProbe;
 
 final class StateStoreTest extends TestCase
 {
@@ -78,15 +80,12 @@ final class StateStoreTest extends TestCase
      */
     public function test_a_run_whose_worker_died_is_deliberately_left_incomplete(): void
     {
-        if (! function_exists('posix_kill')) {
-            $this->markTestSkipped('liveness detection needs ext-posix');
-        }
-
-        $store = $this->store();
-        $store->startRun(getmypid() ?: 1, static fn (): int => 1);
+        $me = getmypid() ?: 1;
+        $store = $this->store(FakeProcessProbe::allGoneExcept([$me]));
+        $store->startRun($me, static fn (): int => 1);
         $store->startRun(self::DEAD_PID, static fn (): int => 1);
 
-        $decision = $store->finish(getmypid() ?: 1, 3, 0);
+        $decision = $store->finish($me, 3, 0);
 
         $this->assertTrue($decision->isAbandoned());
         $this->assertFalse($decision->shouldComplete());
@@ -194,10 +193,6 @@ final class StateStoreTest extends TestCase
      */
     public function test_a_file_left_by_a_dead_invocation_does_not_leak_its_run_id(): void
     {
-        if (! function_exists('posix_kill')) {
-            $this->markTestSkipped('proving an invocation is gone needs ext-posix');
-        }
-
         file_put_contents($this->path, json_encode([
             'runId' => 111,
             'owner' => self::DEAD_PID,
@@ -205,7 +200,7 @@ final class StateStoreTest extends TestCase
             'workers' => [],
         ]));
 
-        $handle = $this->store()->startRun(1001, static fn (): int => 222);
+        $handle = $this->store(FakeProcessProbe::allGoneExcept([]))->startRun(1001, static fn (): int => 222);
 
         $this->assertSame(222, $handle->runSeq);
         $this->assertFalse($handle->alreadyCompleted);
@@ -218,16 +213,12 @@ final class StateStoreTest extends TestCase
      * look complete. So an owner we cannot prove is gone is adopted, not reset.
      */
     /**
-     * Without ext-posix there is no way to prove an invocation is gone, so even
-     * a genuinely stale file is adopted. That costs a loud "results are locked"
+     * When staleness cannot be established — no ext-posix to ask with — even a
+     * genuinely stale file is adopted. That costs a loud "results are locked"
      * on a reused TIDEN_STATE_FILE, which is the cheaper of the two mistakes.
      */
-    public function test_without_posix_a_leftover_file_is_adopted_rather_than_guessed_stale(): void
+    public function test_a_leftover_file_is_adopted_when_staleness_cannot_be_established(): void
     {
-        if (function_exists('posix_kill')) {
-            $this->markTestSkipped('this is the degraded path, exercised in the ext-posix-absent job');
-        }
-
         file_put_contents($this->path, (string) json_encode([
             'runId' => 111,
             'owner' => self::DEAD_PID,
@@ -235,7 +226,10 @@ final class StateStoreTest extends TestCase
             'workers' => [],
         ]));
 
-        $this->assertSame(111, $this->store()->startRun(1301, static fn (): int => 222)->runSeq);
+        $this->assertSame(
+            111,
+            $this->store(FakeProcessProbe::unableToTell())->startRun(1301, static fn (): int => 222)->runSeq,
+        );
     }
 
     public function test_an_owner_that_is_still_alive_is_adopted_rather_than_replaced(): void
@@ -273,8 +267,8 @@ final class StateStoreTest extends TestCase
         $this->assertSame('/explicit.json', StateStore::defaultPath('/explicit.json', '/project/one'));
     }
 
-    private function store(): StateStore
+    private function store(?ProcessProbe $probe = null): StateStore
     {
-        return new StateStore($this->path);
+        return new StateStore($this->path, $probe);
     }
 }

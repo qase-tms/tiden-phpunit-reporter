@@ -31,16 +31,15 @@ use Tiden\PHPUnitReporter\Core\Exception\TidenException;
  */
 final class StateStore
 {
-    /**
-     * errno for "operation not permitted". ext-posix exposes no errno constants,
-     * and EPERM is 1 on every POSIX platform.
-     */
-    private const EPERM = 1;
-
     /** @var resource|null */
     private $handle = null;
 
-    public function __construct(private readonly string $path) {}
+    private readonly ProcessProbe $probe;
+
+    public function __construct(private readonly string $path, ?ProcessProbe $probe = null)
+    {
+        $this->probe = $probe ?? new PosixProcessProbe;
+    }
 
     public static function defaultPath(?string $configured = null, ?string $cwd = null): string
     {
@@ -79,7 +78,7 @@ final class StateStore
     public function startRun(int $pid, callable $createRun): RunHandle
     {
         return $this->withLock(function (array $state) use ($pid, $createRun): array {
-            if (self::isStale($state)) {
+            if ($this->isStale($state)) {
                 $state = self::emptyState();
             }
 
@@ -129,7 +128,7 @@ final class StateStore
                     continue;
                 }
 
-                if (self::isAlive((int) $otherPid)) {
+                if ($this->isAlive((int) $otherPid)) {
                     $alive[] = (int) $otherPid;
                 } else {
                     $dead[] = (int) $otherPid;
@@ -170,23 +169,21 @@ final class StateStore
     }
 
     /**
-     * Without ext-posix we cannot tell a dead pid from a live one. Reporting
-     * "alive" is the conservative answer: it makes the run wait rather than
-     * complete, so an unfinished run is never completed on a guess.
+     * "Cannot tell" answers alive. That is the conservative direction: it makes
+     * the run wait rather than complete, so an unfinished run is never
+     * completed on a guess.
      */
-    private static function isAlive(int $pid): bool
+    private function isAlive(int $pid): bool
     {
-        if (! function_exists('posix_kill')) {
-            return true;
-        }
+        return $this->probe->isRunning($pid) ?? true;
+    }
 
-        if (posix_kill($pid, 0)) {
-            return true;
-        }
-
-        // EPERM means the process exists but belongs to another user. Only
-        // ESRCH ("no such process") actually proves it is gone.
-        return posix_get_last_error() === self::EPERM;
+    /**
+     * Staleness needs proof, not the absence of evidence — see isStale().
+     */
+    private function isProvablyGone(int $pid): bool
+    {
+        return $this->probe->isRunning($pid) === false;
     }
 
     /**
@@ -279,7 +276,7 @@ final class StateStore
      *
      * @param  array<string, mixed>  $state
      */
-    private static function isStale(array $state): bool
+    private function isStale(array $state): bool
     {
         $owner = $state['owner'] ?? null;
 
@@ -287,7 +284,7 @@ final class StateStore
             return false;
         }
 
-        return ! self::isAlive($owner);
+        return $this->isProvablyGone($owner);
     }
 
     /**

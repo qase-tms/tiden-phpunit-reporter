@@ -9,8 +9,10 @@ use Tiden\PHPUnitReporter\Core\Client\HttpResponse;
 use Tiden\PHPUnitReporter\Core\Client\TidenApi;
 use Tiden\PHPUnitReporter\Core\Config\Config;
 use Tiden\PHPUnitReporter\Core\Config\RunConfig;
+use Tiden\PHPUnitReporter\Core\Run\ProcessProbe;
 use Tiden\PHPUnitReporter\Core\Run\RunCoordinator;
 use Tiden\PHPUnitReporter\Core\Run\StateStore;
+use Tiden\PHPUnitReporter\Tests\Support\FakeProcessProbe;
 use Tiden\PHPUnitReporter\Tests\Support\FakeTransport;
 use Tiden\PHPUnitReporter\Tests\Support\RecordingLogger;
 
@@ -71,17 +73,14 @@ final class RunCoordinatorTest extends TestCase
      */
     public function test_refuses_to_complete_a_run_whose_worker_died(): void
     {
-        if (! function_exists('posix_kill')) {
-            $this->markTestSkipped('needs ext-posix');
-        }
-
         $transport = new FakeTransport([new HttpResponse(200, '{"run":{"seqNum":11}}')]);
         $logger = new RecordingLogger;
-        $coordinator = $this->coordinator($transport, logger: $logger);
+        $probe = FakeProcessProbe::allGoneExcept([getmypid() ?: 1]);
+        $coordinator = $this->coordinator($transport, logger: $logger, probe: $probe);
 
         $coordinator->start();
         // A second worker registers and is then killed without finishing.
-        (new StateStore($this->path))->startRun(self::DEAD_PID, static fn (): int => 11);
+        (new StateStore($this->path, $probe))->startRun(self::DEAD_PID, static fn (): int => 11);
 
         $decision = $coordinator->finish(3, 0);
 
@@ -144,7 +143,7 @@ final class RunCoordinatorTest extends TestCase
         $this->assertArrayNotHasKey('description', $body, 'unset values are omitted, not sent as empty strings');
     }
 
-    private function coordinator(FakeTransport $transport, ?RunConfig $run = null, ?RecordingLogger $logger = null): RunCoordinator
+    private function coordinator(FakeTransport $transport, ?RunConfig $run = null, ?RecordingLogger $logger = null, ?ProcessProbe $probe = null): RunCoordinator
     {
         $config = new Config(
             environment: 'ci',
@@ -156,7 +155,7 @@ final class RunCoordinatorTest extends TestCase
         return new RunCoordinator(
             config: $config,
             api: new TidenApi('https://api.tiden.ai', 'tfy_x', 'p1', $transport),
-            state: new StateStore($this->path),
+            state: new StateStore($this->path, $probe),
             logger: $logger ?? new RecordingLogger,
             pid: getmypid() ?: 1,
         );
