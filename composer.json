@@ -1,0 +1,54 @@
+{
+    "name": "tiden/phpunit-reporter",
+    "description": "Tiden reporter for PHPUnit. A PHPUnit extension that observes a test run and reports results into Tiden's public Test Runs API, with no changes to test code.",
+    "keywords": [
+        "tiden",
+        "phpunit",
+        "reporter",
+        "testing",
+        "qa"
+    ],
+    "homepage": "https://github.com/qase-tms/tiden-phpunit-reporter",
+    "support": {
+        "issues": "https://github.com/qase-tms/tiden-phpunit-reporter/issues",
+        "source": "https://github.com/qase-tms/tiden-phpunit-reporter"
+    },
+    "license": "MIT",
+    "type": "library",
+    "require": {
+        "php": "^8.2",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "phpunit/phpunit": "^10.5 || ^11.0 || ^12.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.18",
+        "phpstan/phpstan": "^2.0",
+        "symfony/yaml": "^7.0"
+    },
+    "suggest": {
+        "ext-posix": "Enables liveness-gated run completion under ParaTest, so a run whose worker died is left visibly incomplete instead of being completed as green."
+    },
+    "autoload": {
+        "psr-4": {
+            "Tiden\\PHPUnitReporter\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tiden\\PHPUnitReporter\\Tests\\": "tests/",
+            "Tiden\\PHPUnitReporter\\Examples\\": "examples/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse --memory-limit=512M",
+        "lint": "pint --test",
+        "format": "pint"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

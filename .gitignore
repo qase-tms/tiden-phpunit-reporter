@@ -2,3 +2,6 @@
 /composer.lock
 /.phpunit.cache/
 /.phpunit.result.cache
+
+# Local planning notes; not part of the package.
+/plan/

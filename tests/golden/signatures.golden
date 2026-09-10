@@ -1,0 +1,11 @@
+Tests\Unit\Service\FooTest	testBar	=>	php/v3::tests::unit::service::footest::testbar
+Tests\Unit\Service\FooTest	testBaz	=>	php/v3::tests::unit::service::footest::testbaz
+Tests\Unit\Service\FooBarTest	testBar	=>	php/v3::tests::unit::service::foobartest::testbar
+App\Domain\Billing\InvoiceTest	test_it_charges_once	=>	php/v3::app::domain::billing::invoicetest::test_it_charges_once
+NoNamespaceTest	testSomething	=>	php/v3::nonamespacetest::testsomething
+Tests\Parser\ParserTest	testOperandIs	=>	php/v3::tests::parser::parsertest::testoperandis
+Tests\Search\SearchQueryDecoratorTest	testDecoratesTicketId	=>	php/v3::tests::search::searchquerydecoratortest::testdecoratesticketid
+Tests\Odd\ Spaced Class Test	test With Spaces	=>	php/v3::tests::odd::spaced_class_test::test_with_spaces
+Tests\Odd\TabbedTest	test	Tabbed	=>	php/v3::tests::odd::tabbedtest::test::tabbed
+Tests\Odd\ColonTest	test::Colons	=>	php/v3::tests::odd::colontest::test::colons
+Tests\MiXeDcAsE\CaseTest	TESTUPPER	=>	php/v3::tests::mixedcase::casetest::testupper

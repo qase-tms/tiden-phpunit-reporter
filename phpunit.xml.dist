@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         failOnWarning="true"
+         failOnRisky="true"
+         cacheDirectory=".phpunit.cache">
+    <testsuites>
+        <testsuite name="Tiden">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+    <!--
+        The reporter reports its own test suite. Inert unless TIDEN_MODE is set,
+        so `composer test` is unchanged for contributors — and the package is
+        its own first consumer.
+    -->
+    <extensions>
+        <bootstrap class="Tiden\PHPUnitReporter\TidenExtension">
+            <parameter name="TIDEN_ROOT_SUITE" value="tiden/phpunit-reporter"/>
+        </bootstrap>
+    </extensions>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+</phpunit>
