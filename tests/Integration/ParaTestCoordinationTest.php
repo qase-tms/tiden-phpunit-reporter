@@ -6,7 +6,6 @@ namespace Tiden\PHPUnitReporter\Tests\Integration;
 
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
-use Tiden\PHPUnitReporter\Core\Run\StateStore;
 
 /**
  * Cross-process coordination, exercised with real processes against a real
@@ -111,8 +110,16 @@ final class ParaTestCoordinationTest extends TestCase
             $this->markTestSkipped('needs ext-posix');
         }
 
-        // Stand in for a worker that registered and was then killed.
-        (new StateStore($this->stateFile))->startRun(self::DEAD_PID, static fn (): int => 4242);
+        // Stand in for a worker that registered and was then killed. The state
+        // is written directly rather than through StateStore, because the owner
+        // must be the parent the spawned workers will see — this process — not
+        // this process's own parent.
+        file_put_contents($this->stateFile, (string) json_encode([
+            'runId' => 4242,
+            'owner' => getmypid(),
+            'completed' => false,
+            'workers' => [(string) self::DEAD_PID => ['startedAt' => time(), 'done' => false]],
+        ]));
 
         $this->runWorkersConcurrently(1);
 
@@ -120,6 +127,23 @@ final class ParaTestCoordinationTest extends TestCase
 
         $this->assertGreaterThan(0, $this->countPaths($requests, 'results:report'), 'the surviving worker still reported');
         $this->assertSame(0, $this->countPaths($requests, ':complete'), 'but the run was deliberately not completed');
+    }
+
+    /**
+     * The failure CI caught and three concurrent workers on a fast machine did
+     * not: a worker that starts only after another has finished. The first
+     * worker used to delete the state file on completion, so the second found
+     * none and created a SECOND run — one invocation, two runs, each holding
+     * half the suite and each looking complete.
+     */
+    public function test_a_worker_starting_after_another_finished_does_not_open_a_second_run(): void
+    {
+        $this->runWorkersConcurrently(1);
+        $this->runWorkersConcurrently(1);
+
+        $requests = $this->requests();
+
+        $this->assertSame(1, $this->countPaths($requests, '/runs'), 'still exactly one run');
     }
 
     private function runWorkersConcurrently(int $count): void

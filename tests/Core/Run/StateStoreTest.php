@@ -41,7 +41,7 @@ final class StateStoreTest extends TestCase
         $seqs = [];
 
         foreach ([101, 102, 103] as $pid) {
-            $seqs[] = $this->store()->startRun($pid, $create);
+            $seqs[] = $this->store()->startRun($pid, $create)->runSeq;
         }
 
         $this->assertSame(1, $creations);
@@ -155,9 +155,65 @@ final class StateStoreTest extends TestCase
     {
         file_put_contents($this->path, 'not json at all');
 
-        $seq = $this->store()->startRun(801, static fn (): int => 77);
+        $seq = $this->store()->startRun(801, static fn (): int => 77)->runSeq;
 
         $this->assertSame(77, $seq);
+    }
+
+    /**
+     * The bug this replaced: the first worker to finish deleted the state file,
+     * so a worker that started afterwards found nothing and created a SECOND
+     * run. One ParaTest invocation then appeared as two runs, each holding part
+     * of the suite — and each looking complete.
+     */
+    public function test_a_worker_arriving_after_completion_joins_the_run_instead_of_opening_another(): void
+    {
+        $store = $this->store();
+        $creations = 0;
+        $create = function () use (&$creations): int {
+            $creations++;
+
+            return 4242;
+        };
+
+        $store->startRun(901, $create);
+        $store->finish(901, 1, 0);
+        $store->markCompleted();
+
+        $late = $this->store()->startRun(902, $create);
+
+        $this->assertSame(1, $creations, 'no second run is ever created');
+        $this->assertSame(4242, $late->runSeq);
+        $this->assertTrue($late->alreadyCompleted, 'and the late worker is told its results cannot land');
+    }
+
+    /**
+     * An explicit TIDEN_STATE_FILE is reused across invocations, so a file left
+     * by the previous run must not hand this one an old run id.
+     */
+    public function test_a_file_left_by_a_previous_invocation_does_not_leak_its_run_id(): void
+    {
+        file_put_contents($this->path, json_encode([
+            'runId' => 111,
+            'owner' => 987654321,
+            'completed' => true,
+            'workers' => [],
+        ]));
+
+        $handle = $this->store()->startRun(1001, static fn (): int => 222);
+
+        $this->assertSame(222, $handle->runSeq);
+        $this->assertFalse($handle->alreadyCompleted);
+    }
+
+    public function test_workers_of_one_invocation_share_the_run(): void
+    {
+        $store = $this->store();
+        $first = $store->startRun(1101, static fn (): int => 55);
+        $second = $this->store()->startRun(1102, static fn (): int => 66);
+
+        $this->assertSame(55, $first->runSeq);
+        $this->assertSame(55, $second->runSeq, 'the same parent means the same invocation');
     }
 
     public function test_default_path_is_scoped_to_the_project_and_the_para_test_parent(): void

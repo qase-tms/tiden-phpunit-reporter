@@ -138,15 +138,30 @@ usual cause is a containerised suite: PHPUnit sees `/application/tests/...` whil
 
 Each ParaTest worker bootstraps the extension in its own process, and ParaTest's parent does
 not run PHPUnit's event system — so the workers coordinate through a locked state file (in
-the temp directory, keyed by the ParaTest parent process). The run is created exactly once
-and completed by whichever worker finishes last.
+the temp directory, keyed by the ParaTest parent process). The run is created exactly once,
+and the state file is kept for the whole invocation so that **no worker can ever open a
+second run**.
 
 If a worker **dies** without reporting, the run is deliberately left open. An incomplete run
 cannot pass a quality gate, whereas a completed run quietly missing a worker's results looks
 like a pass. Install `ext-posix` to have the reporter name the process that died; without it
 the run is still left open, just without the diagnostic.
 
-When several suites share one CI job, set `TIDEN_STATE_FILE` explicitly.
+**One limitation, stated plainly.** ParaTest tells a worker its own token but never how many
+workers there are, so a worker cannot know whether it is the last. It completes the run when
+every worker it has *seen* has finished. If a worker starts only after that — possible with a
+small suite, where a worker can finish before a sibling has booted — it joins the same run
+(never a second one) and logs an error saying its results cannot be recorded, because the run
+is closed. If you hit that, take completion out of the workers' hands:
+
+```bash
+TIDEN_RUN_COMPLETE=false vendor/bin/paratest
+tiden run complete "$TIDEN_RUN_ID"
+```
+
+When several suites share one CI job, set `TIDEN_STATE_FILE` explicitly. It is safe to reuse
+the same path across runs: a state file whose parent process differs from the current one is
+treated as a leftover and ignored.
 
 ## Sharded CI
 

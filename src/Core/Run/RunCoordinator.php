@@ -16,6 +16,9 @@ final class RunCoordinator
 {
     private ?int $runSeq = null;
 
+    /** True when this worker joined a run another worker had already closed. */
+    private bool $joinedClosedRun = false;
+
     public function __construct(
         private readonly Config $config,
         private readonly TidenApi $api,
@@ -35,7 +38,7 @@ final class RunCoordinator
             return $this->runSeq;
         }
 
-        $this->runSeq = $this->state->startRun($this->pid, function (): int {
+        $handle = $this->state->startRun($this->pid, function (): int {
             if ($this->config->run->id !== null) {
                 $this->logger->debug(sprintf('adopting externally created run %d', $this->config->run->id));
 
@@ -47,6 +50,23 @@ final class RunCoordinator
 
             return $seq;
         });
+
+        $this->runSeq = $handle->runSeq;
+
+        if ($handle->alreadyCompleted) {
+            $this->joinedClosedRun = true;
+
+            // This worker started after another decided the run was over. Its
+            // results will be rejected ("results are locked"), which is the
+            // loud outcome; the silent one would be a second run holding half
+            // the suite.
+            $this->logger->error(sprintf(
+                'joined run %d, but it was already completed by another worker before this process started, '.
+                'so its results cannot be recorded. Set TIDEN_RUN_COMPLETE=false and complete the run once '.
+                'the whole suite has finished.',
+                $this->runSeq,
+            ));
+        }
 
         // Parity with commons: a nested runner spawned from this process
         // inherits the run instead of opening a second one.
@@ -95,7 +115,6 @@ final class RunCoordinator
                 (string) ($this->runSeq ?? '?'),
                 implode(', ', $decision->deadWorkers),
             ));
-            $this->state->discard();
 
             return $decision;
         }
@@ -105,6 +124,12 @@ final class RunCoordinator
         }
 
         try {
+            if ($this->joinedClosedRun) {
+                // Already reported as an error when this worker joined; saying
+                // "completed test run N" on top of that would contradict it.
+                return $decision;
+            }
+
             if (! $this->config->run->complete) {
                 $this->logger->debug('run.complete is false; leaving completion to the orchestrator');
 
@@ -130,7 +155,9 @@ final class RunCoordinator
                 $this->logger->info(sprintf('completed test run %d', $this->runSeq));
             }
         } finally {
-            $this->state->discard();
+            // Recorded, never deleted: a worker that starts after this point
+            // must adopt the run rather than open a second one.
+            $this->state->markCompleted();
         }
 
         return $decision;

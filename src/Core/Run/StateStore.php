@@ -66,18 +66,36 @@ final class StateStore
      * Register this worker and make sure a run exists, creating it under the
      * lock so that N workers produce exactly one CreateTestRun call.
      *
-     * @param  callable(): int  $createRun  Invoked at most once across all workers.
+     * A recorded run is ALWAYS adopted, including one already completed. The
+     * earlier design deleted the state file on completion, and a worker that
+     * started after the first one finished then found no file and created a
+     * second run — one ParaTest invocation appearing as two runs, each holding
+     * part of the results. Adopting a completed run instead makes the late
+     * worker fail loudly ("results are locked") rather than silently splitting
+     * the run in two.
+     *
+     * @param  callable(): int  $createRun  Invoked at most once per invocation.
      */
-    public function startRun(int $pid, callable $createRun): int
+    public function startRun(int $pid, callable $createRun): RunHandle
     {
         return $this->withLock(function (array $state) use ($pid, $createRun): array {
+            // An explicit TIDEN_STATE_FILE is reused across invocations, so a
+            // file left by a previous one must not hand this run its run id.
+            // Workers of one invocation share a parent; a later invocation does
+            // not.
+            if (($state['owner'] ?? null) !== self::owner()) {
+                $state = self::emptyState();
+            }
+
+            $state['owner'] = self::owner();
+
             if (! is_int($state['runId'] ?? null)) {
                 $state['runId'] = $createRun();
             }
 
             $state['workers'][(string) $pid] = ['startedAt' => time(), 'done' => false];
 
-            return [$state, $state['runId']];
+            return [$state, new RunHandle((int) $state['runId'], ($state['completed'] ?? false) === true)];
         });
     }
 
@@ -138,9 +156,21 @@ final class StateStore
         });
     }
 
-    public function discard(): void
+    /**
+     * Record that the run has been completed, keeping the file so that a worker
+     * arriving afterwards adopts the run instead of opening a second one.
+     *
+     * The file is left in the temp directory. It is small, it is keyed by the
+     * ParaTest parent, and the owner check in startRun() makes a leftover one
+     * harmless to the next invocation.
+     */
+    public function markCompleted(): void
     {
-        @unlink($this->path);
+        $this->withLock(static function (array $state): array {
+            $state['completed'] = true;
+
+            return [$state, null];
+        });
     }
 
     /**
@@ -216,11 +246,35 @@ final class StateStore
         $decoded = is_string($contents) && trim($contents) !== '' ? json_decode($contents, true) : null;
 
         if (! is_array($decoded) || ! is_array($decoded['workers'] ?? null)) {
-            return ['runId' => is_array($decoded) && is_int($decoded['runId'] ?? null) ? $decoded['runId'] : null, 'workers' => []];
+            // A truncated or hand-edited file is not trusted in part: the only
+            // thing worth salvaging is a run id, and only if it is really one.
+            $state = self::emptyState();
+
+            if (is_array($decoded) && is_int($decoded['runId'] ?? null)) {
+                $state['runId'] = $decoded['runId'];
+                $state['owner'] = $decoded['owner'] ?? null;
+            }
+
+            return $state;
         }
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
+    }
+
+    /** @return array<string, mixed> */
+    private static function emptyState(): array
+    {
+        return ['runId' => null, 'owner' => self::owner(), 'completed' => false, 'workers' => []];
+    }
+
+    /**
+     * Identifies one ParaTest invocation: every worker shares a parent process,
+     * and a later invocation has a different one.
+     */
+    private static function owner(): int
+    {
+        return function_exists('posix_getppid') ? posix_getppid() : (getmypid() ?: 0);
     }
 
     /**
