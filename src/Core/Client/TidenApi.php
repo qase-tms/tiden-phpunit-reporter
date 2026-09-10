@@ -171,6 +171,15 @@ final class TidenApi
             default => '',
         };
 
+        // The server's own reason lives in the top-level message; without it a
+        // user is told "HTTP 400" when the API said "run #7 is failed; results
+        // are locked". Per-entry errors above are additional, not a substitute.
+        $message = $decoded['message'] ?? null;
+
+        if (is_string($message) && $message !== '') {
+            $hint = ' '.$message.$hint;
+        }
+
         return new ApiException(
             sprintf('POST %s failed with HTTP %d.%s', $url, $response->status, $hint),
             $response->status,

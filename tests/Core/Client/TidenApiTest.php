@@ -117,6 +117,23 @@ final class TidenApiTest extends TestCase
         $this->assertCount(1, $transport->requests, 'a rejected batch is not retried four more times');
     }
 
+    /**
+     * Observed live: reporting into a completed run answers HTTP 400 with
+     * {"code":9,"message":"run #1386 is failed; results are locked","details":[]}.
+     * The reason is in the top-level message, not in details, so an error that
+     * only reads details tells the user "HTTP 400" and nothing else.
+     */
+    public function test_the_servers_own_reason_reaches_the_user(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(400, '{"code":9,"message":"run #7 is failed; results are locked","details":[]}'),
+        ]);
+
+        $this->expectExceptionMessage('run #7 is failed; results are locked');
+
+        $this->api($transport)->reportResults(7, [['id' => 'x']]);
+    }
+
     public function test_unauthorized_failure_points_at_the_token(): void
     {
         $transport = new FakeTransport([new HttpResponse(401, '{}')]);
