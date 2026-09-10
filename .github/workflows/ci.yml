@@ -34,11 +34,30 @@ jobs:
       # `--with` pins one major out of the root range; the constraint is a subset
       # of composer.json's, so the matrix tests what the manifest actually claims.
       - run: composer update --no-interaction --no-progress --prefer-dist --with="phpunit/phpunit:${{ matrix.phpunit }}"
-      - run: composer lint
-      - run: composer analyse
       - run: composer test
 
-  lint-without-posix:
+  # Lint and static analysis run once, against the newest supported PHPUnit.
+  # PHPStan analyses the code against whatever PHPUnit is installed, and
+  # Test\PreparationErrored exists only from 11.4 — the subscriber for it is
+  # registered behind interface_exists() at runtime, but on PHPUnit 10.5 the
+  # analyser can only report it as an unknown type. The matrix above is what
+  # proves the older versions actually work.
+  static:
+    name: Lint and static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          extensions: curl, json, posix
+          coverage: none
+          tools: composer:v2
+      - run: composer install --no-interaction --no-progress
+      - run: composer lint
+      - run: composer analyse
+
+  without-posix:
     name: ext-posix absent
     runs-on: ubuntu-latest
     steps:
