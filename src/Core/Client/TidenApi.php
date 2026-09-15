@@ -33,6 +33,9 @@ final class TidenApi
      * here is deterministic — resending it four more times only delays the
      * same refusal.
      *
+     * Connection-level failures are retried too, but they are not in this list:
+     * they never produce a status at all. See send().
+     *
      * @var list<int>
      */
     private const RETRYABLE_STATUSES = [408, 429, 502, 503, 504];
@@ -136,7 +139,24 @@ final class TidenApi
         $backoffMs = self::BACKOFF_START_MS;
 
         for ($attempt = 0; $attempt <= self::MAX_RETRIES; $attempt++) {
-            $response = $this->transport->post($url, $json, $headers);
+            try {
+                $response = $this->transport->post($url, $json, $headers);
+            } catch (ApiException $e) {
+                // A refused, reset or timed-out connection never produced a
+                // status to inspect, so the status-based branch below cannot
+                // see it -- and not retrying it drops a whole batch for a blip.
+                // This is the most transient failure there is and the one least
+                // worth losing results over: it never reached the server, so
+                // there is no record of it on either side of the wire.
+                if ($attempt >= self::MAX_RETRIES) {
+                    throw $e;
+                }
+
+                $this->sleepMs($backoffMs);
+                $backoffMs = min($backoffMs * 2, self::BACKOFF_CAP_MS);
+
+                continue;
+            }
 
             if ($response->isSuccess()) {
                 return $response;
