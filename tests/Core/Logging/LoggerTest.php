@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tiden\PHPUnitReporter\Core\Config\Config;
 use Tiden\PHPUnitReporter\Core\Config\LoggingConfig;
+use Tiden\PHPUnitReporter\Core\Config\Mode;
 use Tiden\PHPUnitReporter\Core\Logging\Logger;
 
 final class LoggerTest extends TestCase
@@ -45,7 +46,10 @@ final class LoggerTest extends TestCase
         bool $consoleIsDiscarded,
         bool $expectFile,
     ): void {
-        $config = new Config(logging: new LoggingConfig(console: false, file: $configuredFile));
+        $config = new Config(
+            mode: Mode::Tiden,
+            logging: new LoggingConfig(console: false, file: $configuredFile),
+        );
 
         Logger::fromConfig($config, $consoleIsDiscarded)->error('a batch was lost');
 
@@ -61,9 +65,35 @@ final class LoggerTest extends TestCase
         yield 'a_plain_run_writes_nothing_by_default' => [false, false, false];
     }
 
+    /**
+     * A disabled reporter must leave nothing behind. It announces that it is
+     * off as soon as ANY TIDEN_* variable is set — and a test harness may set
+     * one for unrelated reasons, e.g. pinning TIDEN_ROOT_DIR inside a
+     * container. Escalating that announcement to disk put an untracked file in
+     * the checkout of everyone who had never asked for Tiden at all.
+     */
+    public function test_a_disabled_reporter_writes_no_file_even_under_paratest(): void
+    {
+        $config = new Config(mode: Mode::Off, logging: new LoggingConfig(console: false, file: false));
+
+        Logger::fromConfig($config, true)->info('reporter disabled — nothing will be reported');
+
+        $this->assertFalse(is_file($this->sandbox.'/logs/tiden.log'));
+    }
+
+    /** An explicit TIDEN_LOGGING_FILE still wins, disabled or not. */
+    public function test_an_explicit_file_request_is_honoured_even_when_disabled(): void
+    {
+        $config = new Config(mode: Mode::Off, logging: new LoggingConfig(console: false, file: true));
+
+        Logger::fromConfig($config, true)->info('reporter disabled');
+
+        $this->assertTrue(is_file($this->sandbox.'/logs/tiden.log'));
+    }
+
     public function test_the_escalated_file_carries_the_message(): void
     {
-        $config = new Config(logging: new LoggingConfig(console: false, file: false));
+        $config = new Config(mode: Mode::Tiden, logging: new LoggingConfig(console: false, file: false));
 
         Logger::fromConfig($config, true)->error('failed to report 200 result(s)');
 
