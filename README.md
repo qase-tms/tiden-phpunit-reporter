@@ -142,6 +142,31 @@ the temp directory, keyed by the ParaTest parent process). The run is created ex
 and the state file is kept for the whole invocation so that **no worker can ever open a
 second run**.
 
+**Under ParaTest the reporter writes `logs/tiden.log` whether or not you asked for it.**
+ParaTest gives each worker a pipe for stdout and stderr that its parent reads only when that
+worker *crashes*: on a green run the buffer is discarded unread. Console logging is therefore
+not a channel here, and a failed upload would otherwise be invisible — which is exactly how a
+suite can report a few hundred fewer results than it ran and still look healthy. The file
+holds one line per run: what was reported, and what failed to report. `TIDEN_LOGGING_FILE`
+still forces the file on everywhere else. Add `/logs/` to your `.gitignore`.
+
+At the end of a run the last worker writes the run-wide tally:
+
+```
+[INFO] tiden: run 42 reported 9693 result(s) to Tiden; 0 failed to report
+```
+
+Reconcile that against your runner's own test count.
+
+**A run that failed to report results is deliberately left open**, the same way a run whose
+worker died is. An incomplete run cannot pass a quality gate, whereas a completed run quietly
+missing results reads as a pass — and a run a few hundred results short is indistinguishable
+from a run that was always that size. The reporter still never fails the suite over it: the
+run is left open, the reason is logged, and the test runner's own verdict is untouched.
+
+If an orchestrator completes the run instead (`TIDEN_RUN_COMPLETE=false`), that decision is
+yours and the reporter does not override it — read the tally above before completing.
+
 If a worker **dies** without reporting, the run is deliberately left open. An incomplete run
 cannot pass a quality gate, whereas a completed run quietly missing a worker's results looks
 like a pass. Install `ext-posix` to have the reporter name the process that died; without it

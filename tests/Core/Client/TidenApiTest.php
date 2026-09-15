@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tiden\PHPUnitReporter\Tests\Core\Client;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Tiden\PHPUnitReporter\Core\Client\HttpResponse;
 use Tiden\PHPUnitReporter\Core\Client\TidenApi;
@@ -82,7 +83,7 @@ final class TidenApiTest extends TestCase
         );
     }
 
-    public function test_retries_only_on429_and_then_succeeds(): void
+    public function test_retries_a_throttled_request_and_then_succeeds(): void
     {
         $transport = new FakeTransport([
             new HttpResponse(429, '{}', ['retry-after' => '1']),
@@ -101,6 +102,60 @@ final class TidenApiTest extends TestCase
         // Retry-After (1s) governs the first wait; the second 429 carries no
         // header, so the exponential backoff that has meanwhile doubled applies.
         $this->assertSame([1000, 2000], $slept);
+    }
+
+    /**
+     * 429 alone was not enough. The results endpoint carries no application
+     * rate limit, so that set meant "never retry" in practice while a single
+     * 503 from an edge proxy dropped a whole batch permanently.
+     */
+    #[DataProvider('transientStatuses')]
+    public function test_retries_a_transient_status_and_then_succeeds(int $status): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse($status, '{}'),
+            new HttpResponse(200, '{"accepted":"1","duplicates":"0"}'),
+        ]);
+
+        $this->api($transport)->reportResults(1, [['id' => 'x']]);
+
+        $this->assertCount(2, $transport->requests);
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function transientStatuses(): iterable
+    {
+        yield 'request_timeout' => [408];
+        yield 'too_many_requests' => [429];
+        yield 'bad_gateway' => [502];
+        yield 'service_unavailable' => [503];
+        yield 'gateway_timeout' => [504];
+    }
+
+    /** A deterministic refusal is not made truer by asking four more times. */
+    #[DataProvider('permanentStatuses')]
+    public function test_does_not_retry_a_permanent_status(int $status): void
+    {
+        $transport = new FakeTransport([new HttpResponse($status, '{}')]);
+
+        try {
+            $this->api($transport)->reportResults(1, [['id' => 'x']]);
+            $this->fail('expected an ApiException');
+        } catch (ApiException $e) {
+            $this->assertSame($status, $e->statusCode);
+        }
+
+        $this->assertCount(1, $transport->requests);
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function permanentStatuses(): iterable
+    {
+        yield 'unauthorized' => [401];
+        yield 'forbidden' => [403];
+        yield 'not_found' => [404];
+        yield 'payload_rejected' => [413];
+        yield 'internal_error' => [500];
     }
 
     public function test_does_not_retry_on400(): void

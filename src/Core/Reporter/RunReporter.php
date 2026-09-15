@@ -28,6 +28,18 @@ final class RunReporter implements InternalReporter
      */
     private bool $givenUp = false;
 
+    /**
+     * What this worker actually got onto the wire, and what it lost trying.
+     *
+     * Kept per worker and summed across all of them in the state file, because
+     * under ParaTest no single process sees the whole run — and a run that is
+     * short by a few hundred results is otherwise indistinguishable from a run
+     * that was always that size.
+     */
+    private int $reported = 0;
+
+    private int $failed = 0;
+
     public function __construct(
         private readonly Config $config,
         private readonly TidenApi $api,
@@ -69,12 +81,19 @@ final class RunReporter implements InternalReporter
         }
 
         try {
-            $this->coordinator->finish($this->filePaths->resolvedCount(), $this->filePaths->omittedCount());
-        } catch (TidenException $e) {
+            $this->coordinator->finish(
+                $this->filePaths->resolvedCount(),
+                $this->filePaths->omittedCount(),
+                $this->reported,
+                $this->failed,
+            );
+        } catch (\Throwable $e) {
             // The suite's own verdict is the thing under test. A reporter that
             // throws here turns a green build red for a reason that has nothing
-            // to do with the code under test.
-            $this->logger->error(sprintf('failed to finish the run: %s', $e->getMessage()));
+            // to do with the code under test. Throwable, not TidenException: an
+            // unexpected type escaping here is absorbed by the test runner's
+            // event dispatcher as a warning nobody reads.
+            $this->logger->error(sprintf('failed to finish the run: %s: %s', $e::class, $e->getMessage()));
         }
     }
 
@@ -125,18 +144,59 @@ final class RunReporter implements InternalReporter
         $this->buffer = [];
 
         foreach (array_chunk($pending, $this->config->batch->size) as $chunk) {
+            $this->send($runSeq, $chunk);
+        }
+    }
+
+    /**
+     * Report one chunk, and account for it either way.
+     *
+     * Throwable rather than TidenException: json_encode throws \JsonException,
+     * which is not one, and an exception escaping this far is swallowed by the
+     * test runner's event dispatcher as a warning that never reaches a CI log.
+     * That turns a lost batch into a loss with no signal at all.
+     *
+     * @param  list<TestResult>  $chunk
+     */
+    private function send(int $runSeq, array $chunk): void
+    {
+        $count = count($chunk);
+
+        try {
             $payload = array_map(
                 fn (TestResult $result): array => $this->transformer->toResultCreate($result),
                 $chunk,
             );
 
-            try {
-                $this->api->reportResults($runSeq, $payload);
-            } catch (TidenException $e) {
-                // Losing a batch must not take the test suite down with it: the
-                // suite's own verdict is the thing under test, not ours.
-                $this->logger->error(sprintf('failed to report %d result(s): %s', count($chunk), $e->getMessage()));
-            }
+            $outcome = $this->api->reportResults($runSeq, $payload);
+        } catch (\Throwable $e) {
+            // Losing a batch must not take the test suite down with it: the
+            // suite's own verdict is the thing under test, not ours.
+            $this->failed += $count;
+            $this->logger->error(sprintf(
+                'failed to report %d result(s): %s: %s',
+                $count,
+                $e::class,
+                $e->getMessage(),
+            ));
+
+            return;
+        }
+
+        $landed = $outcome['accepted'] + $outcome['duplicates'];
+        $this->reported += min($landed, $count);
+
+        // A 2xx that took fewer rows than it was given is the quietest way to
+        // lose results there is: nothing throws and nothing is logged.
+        if ($landed < $count) {
+            $this->failed += $count - $landed;
+            $this->logger->warning(sprintf(
+                'reported %d result(s) but the API accepted %d and deduplicated %d; %d were not recorded',
+                $count,
+                $outcome['accepted'],
+                $outcome['duplicates'],
+                $count - $landed,
+            ));
         }
     }
 }

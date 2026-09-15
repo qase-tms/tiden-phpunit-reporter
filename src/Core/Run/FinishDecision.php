@@ -16,18 +16,28 @@ final class FinishDecision
         public readonly int $resolvedPaths = 0,
         public readonly int $omittedPaths = 0,
         public readonly array $deadWorkers = [],
+        public readonly int $reportedResults = 0,
+        public readonly int $failedResults = 0,
     ) {}
 
     /** Every worker is accounted for: this one completes the run. */
-    public static function complete(int $resolvedPaths = 0, int $omittedPaths = 0): self
-    {
-        return new self('complete', $resolvedPaths, $omittedPaths);
+    public static function complete(
+        int $resolvedPaths = 0,
+        int $omittedPaths = 0,
+        int $reportedResults = 0,
+        int $failedResults = 0,
+    ): self {
+        return new self('complete', $resolvedPaths, $omittedPaths, [], $reportedResults, $failedResults);
     }
 
     /** Other workers are still running; one of them will complete it. */
-    public static function wait(int $resolvedPaths = 0, int $omittedPaths = 0): self
-    {
-        return new self('wait', $resolvedPaths, $omittedPaths);
+    public static function wait(
+        int $resolvedPaths = 0,
+        int $omittedPaths = 0,
+        int $reportedResults = 0,
+        int $failedResults = 0,
+    ): self {
+        return new self('wait', $resolvedPaths, $omittedPaths, [], $reportedResults, $failedResults);
     }
 
     /**
@@ -37,9 +47,14 @@ final class FinishDecision
      *
      * @param  list<int>  $deadWorkers
      */
-    public static function abandoned(array $deadWorkers, int $resolvedPaths = 0, int $omittedPaths = 0): self
-    {
-        return new self('abandoned', $resolvedPaths, $omittedPaths, $deadWorkers);
+    public static function abandoned(
+        array $deadWorkers,
+        int $resolvedPaths = 0,
+        int $omittedPaths = 0,
+        int $reportedResults = 0,
+        int $failedResults = 0,
+    ): self {
+        return new self('abandoned', $resolvedPaths, $omittedPaths, $deadWorkers, $reportedResults, $failedResults);
     }
 
     public function shouldComplete(): bool
@@ -50,6 +65,15 @@ final class FinishDecision
     public function isAbandoned(): bool
     {
         return $this->action === 'abandoned';
+    }
+
+    /**
+     * True when this run failed to report results it had in hand — a batch the
+     * API refused, or one that could not be sent at all.
+     */
+    public function lostResults(): bool
+    {
+        return $this->failedResults > 0;
     }
 
     /**

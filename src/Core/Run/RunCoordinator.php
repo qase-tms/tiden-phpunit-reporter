@@ -103,9 +103,21 @@ final class RunCoordinator
      * an explicit run.complete=false, a worker that died, and a run in which no
      * result carried a file_path.
      */
-    public function finish(int $resolvedPaths, int $omittedPaths): FinishDecision
-    {
-        $decision = $this->state->finish($this->pid, $resolvedPaths, $omittedPaths);
+    public function finish(
+        int $resolvedPaths,
+        int $omittedPaths,
+        int $reportedResults = 0,
+        int $failedResults = 0,
+    ): FinishDecision {
+        $decision = $this->state->finish($this->pid, $resolvedPaths, $omittedPaths, $reportedResults, $failedResults);
+
+        // Said by whichever worker turns out to be last, and only once, because
+        // it is the only moment any process knows the run-wide totals. It is
+        // deliberately not gated on run.complete: an orchestrator that completes
+        // the run itself still needs to know what reached the API.
+        if ($decision->shouldComplete() || $decision->isAbandoned()) {
+            $this->summarize($decision);
+        }
 
         if ($decision->isAbandoned()) {
             $this->logger->error(sprintf(
@@ -132,6 +144,19 @@ final class RunCoordinator
 
             if (! $this->config->run->complete) {
                 $this->logger->debug('run.complete is false; leaving completion to the orchestrator');
+
+                return $decision;
+            }
+
+            if ($decision->lostResults()) {
+                $this->logger->error(sprintf(
+                    'run %s is NOT being completed: %d result(s) never reached Tiden. The run is left '.
+                    'open on purpose — completing it would present a run that is missing results as a '.
+                    'finished one, and a green run short of a few hundred results is indistinguishable '.
+                    'from a run that was always that size. See the errors above for what was refused.',
+                    (string) ($this->runSeq ?? '?'),
+                    $decision->failedResults,
+                ));
 
                 return $decision;
             }
@@ -166,5 +191,30 @@ final class RunCoordinator
     public function runSeq(): ?int
     {
         return $this->runSeq;
+    }
+
+    /**
+     * The run's own tally, for a caller that wants to reconcile it against the
+     * test runner's count. Logged at warning level when anything was lost, so a
+     * silent shortfall stops being possible: the previous behaviour reported a
+     * green, complete-looking run that was simply missing results.
+     */
+    private function summarize(FinishDecision $decision): void
+    {
+        $line = sprintf(
+            'run %s reported %d result(s) to Tiden; %d failed to report',
+            (string) ($this->runSeq ?? '?'),
+            $decision->reportedResults,
+            $decision->failedResults,
+        );
+
+        if ($decision->failedResults > 0) {
+            $this->logger->warning($line.'. Those results exist in the suite but not in Tiden, so '
+                .'anything they cover reads as uncovered.');
+
+            return;
+        }
+
+        $this->logger->info($line);
     }
 }

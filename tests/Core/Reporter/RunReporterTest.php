@@ -178,6 +178,150 @@ final class RunReporterTest extends TestCase
         $this->assertSame(0, $transport->countRequestsTo(':complete'));
     }
 
+    /**
+     * The loss this package shipped with: anything that was not a TidenException
+     * escaped flush(), and PHPUnit's dispatcher absorbs a throwing subscriber as
+     * a warning that no CI log surfaces. The batch vanished with no signal at
+     * all — not even the "failed to report" line a TidenException produced.
+     */
+    public function test_an_unexpected_throwable_is_logged_rather_than_escaping(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(200, '{"run":{"seqNum":9}}'),
+            new \LogicException('encoder blew up'),
+        ]);
+        $logger = new RecordingLogger;
+        $reporter = $this->reporter($transport, logger: $logger);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertTrue($logger->has('ERROR', 'failed to report 1 result'));
+        $this->assertTrue($logger->has('ERROR', 'LogicException'), 'the exception type is named');
+    }
+
+    /** One bad batch must not silence the reporter for the rest of the run. */
+    public function test_a_failed_batch_does_not_stop_later_batches_from_reporting(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(200, '{"run":{"seqNum":9}}'),
+            new \LogicException('boom'),
+            new HttpResponse(200, '{"accepted":"1","duplicates":"0"}'),
+        ]);
+        $reporter = $this->reporter($transport, batchSize: 1);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertSame(2, $transport->countRequestsTo('results:report'));
+    }
+
+    /**
+     * A 2xx that took fewer rows than it was given is the quietest loss there
+     * is: nothing throws, and the count was previously discarded unread.
+     */
+    public function test_a_batch_the_api_did_not_fully_accept_is_warned_about(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(200, '{"run":{"seqNum":9}}'),
+            new HttpResponse(200, '{"accepted":"1","duplicates":"0"}'),
+        ]);
+        $logger = new RecordingLogger;
+        $reporter = $this->reporter($transport, batchSize: 2, logger: $logger);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertTrue($logger->has('WARN', '1 were not recorded'));
+    }
+
+    /** Deduplicated rows landed; they are not a shortfall. */
+    public function test_duplicates_count_as_landed_and_are_not_warned_about(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(200, '{"run":{"seqNum":9}}'),
+            new HttpResponse(200, '{"accepted":"1","duplicates":"1"}'),
+        ]);
+        $logger = new RecordingLogger;
+        $reporter = $this->reporter($transport, batchSize: 2, logger: $logger);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertFalse($logger->has('WARN', 'not recorded'));
+    }
+
+    /**
+     * The reconciliation a caller needs: what the run got onto the wire and what
+     * it lost, said once, by whichever worker finished last.
+     */
+    public function test_the_run_summary_reconciles_what_was_reported_against_what_was_lost(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(200, '{"run":{"seqNum":9}}'),
+            new HttpResponse(500, '{}'),
+            new HttpResponse(200, '{"accepted":"1","duplicates":"0"}'),
+        ]);
+        $logger = new RecordingLogger;
+        $reporter = $this->reporter($transport, batchSize: 1, logger: $logger);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertTrue(
+            $logger->has('WARN', 'reported 1 result(s) to Tiden; 1 failed to report'),
+            'the summary names both totals: '.$logger->joined(),
+        );
+    }
+
+    /** A clean run still says what it reported, so the count can be checked. */
+    public function test_a_clean_run_reports_its_total_at_info_level(): void
+    {
+        $transport = $this->transport();
+        $logger = new RecordingLogger;
+        $reporter = $this->reporter($transport, batchSize: 1, logger: $logger);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertTrue($logger->has('INFO', 'reported 1 result(s) to Tiden; 0 failed to report'));
+    }
+
+    /**
+     * A single malformed byte — from a truncated message or stacktrace — used to
+     * make json_encode refuse the entire body, taking every innocent result in
+     * the batch with it.
+     */
+    public function test_a_result_carrying_invalid_utf8_is_still_reported(): void
+    {
+        $transport = $this->transport();
+        $logger = new RecordingLogger;
+        $reporter = $this->reporter($transport, logger: $logger);
+
+        $result = $this->makeResult();
+        $result->appendMessage("broken \xC3 tail");
+
+        $reporter->startRun();
+        $reporter->addResult($result);
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertSame(1, $transport->countRequestsTo('results:report'));
+        $this->assertFalse($logger->has('ERROR', 'failed to report'));
+
+        $this->assertCount(2, $this->reportedResults($transport), 'the innocent result travelled with it');
+    }
+
     private function transport(): FakeTransport
     {
         return new FakeTransport([new HttpResponse(200, '{"run":{"seqNum":9},"accepted":"1","duplicates":"0"}')]);
@@ -187,7 +331,16 @@ final class RunReporterTest extends TestCase
     {
         $config = new Config(productId: 'p1', batch: new BatchConfig($batchSize));
         $logger ??= new RecordingLogger;
-        $api = new TidenApi('https://api.tiden.ai', 'tfy_x', 'p1', $transport, $logger);
+        // A no-op sleeper: 503 is retryable, and without this the unreachable-API
+        // case would spend half a minute in real backoffs.
+        $api = new TidenApi(
+            'https://api.tiden.ai',
+            'tfy_x',
+            'p1',
+            $transport,
+            $logger,
+            static function (int $milliseconds): void {},
+        );
 
         return new RunReporter(
             $config,
@@ -197,6 +350,68 @@ final class RunReporterTest extends TestCase
             new FilePathResolver(dirname(__DIR__, 3)),
             $logger,
         );
+    }
+
+    /**
+     * The same rule the package already applies to a worker that died: an
+     * incomplete run cannot pass a quality gate, whereas a completed run quietly
+     * missing results reads as a pass. A lost batch is that case exactly.
+     */
+    public function test_a_run_that_lost_results_is_not_completed(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(200, '{"run":{"seqNum":9}}'),
+            new HttpResponse(400, '{"message":"rejected"}'),
+            new HttpResponse(200, '{"accepted":"1","duplicates":"0"}'),
+        ]);
+        $logger = new RecordingLogger;
+        $reporter = $this->reporter($transport, batchSize: 1, logger: $logger);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertSame(0, $transport->countRequestsTo(':complete'), 'the run is left open');
+        $this->assertTrue($logger->has('ERROR', 'is NOT being completed: 1 result(s) never reached Tiden'));
+    }
+
+    /** The converse, so the guard cannot quietly stop completing healthy runs. */
+    public function test_a_run_that_lost_nothing_is_completed(): void
+    {
+        $transport = $this->transport();
+        $reporter = $this->reporter($transport, batchSize: 1);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertSame(1, $transport->countRequestsTo(':complete'));
+    }
+
+    /**
+     * Every result id that reached the wire, across all results:report calls.
+     *
+     * @return list<string>
+     */
+    private function reportedResults(FakeTransport $transport): array
+    {
+        $ids = [];
+
+        foreach ($transport->requests as $request) {
+            if (! str_contains($request['url'], 'results:report')) {
+                continue;
+            }
+
+            /** @var array{results: list<array{id: string}>} $body */
+            $body = json_decode($request['json'], true);
+
+            foreach ($body['results'] as $result) {
+                $ids[] = $result['id'];
+            }
+        }
+
+        return $ids;
     }
 
     private function makeResult(): TestResult
