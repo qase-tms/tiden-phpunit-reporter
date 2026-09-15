@@ -5,3 +5,6 @@
 
 # Local planning notes; not part of the package.
 /plan/
+
+# Written by the reporter itself under ParaTest (see README, "ParaTest").
+/logs/
