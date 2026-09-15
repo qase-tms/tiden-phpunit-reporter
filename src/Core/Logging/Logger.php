@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tiden\PHPUnitReporter\Core\Logging;
 
 use Tiden\PHPUnitReporter\Core\Config\Config;
+use Tiden\PHPUnitReporter\Core\Config\Mode;
 
 /**
  * Writes to stderr so reporter chatter never contaminates a test runner's
@@ -42,7 +43,13 @@ class Logger
         // asking each consuming repository to set TIDEN_LOGGING_FILE keeps the
         // fix in one place: every ParaTest user has this problem, and none of
         // them can see it.
-        $file = $config->logging->file || $consoleIsDiscarded;
+        //
+        // Only when the reporter is actually switched on, though. A disabled
+        // reporter has no results to lose and nothing to say that is worth a
+        // file in someone's checkout -- and it DOES say something: it announces
+        // that it is disabled as soon as any TIDEN_* variable is set, which a
+        // test harness may well set for unrelated reasons.
+        $file = $config->logging->file || ($consoleIsDiscarded && $config->mode !== Mode::Off);
 
         return new self($config->logging->console, $file, $config->debug);
     }
