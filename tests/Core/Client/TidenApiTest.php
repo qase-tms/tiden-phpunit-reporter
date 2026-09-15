@@ -130,6 +130,12 @@ final class TidenApiTest extends TestCase
         yield 'bad_gateway' => [502];
         yield 'service_unavailable' => [503];
         yield 'gateway_timeout' => [504];
+        // Observed in the field: one batch of 200 in a ~9,800-result run came
+        // back 500 while every other batch of the same run succeeded. An
+        // unexpected server fault is not a considered refusal, and the result
+        // ids make a resend idempotent, so losing 200 proven results to it is
+        // the worse trade.
+        yield 'internal_error' => [500];
     }
 
     /**
@@ -164,7 +170,10 @@ final class TidenApiTest extends TestCase
         }
     }
 
-    /** A deterministic refusal is not made truer by asking four more times. */
+    /**
+     * A deterministic refusal is not made truer by asking four more times.
+     * These are all answers the server has considered, unlike a 5xx.
+     */
     #[DataProvider('permanentStatuses')]
     public function test_does_not_retry_a_permanent_status(int $status): void
     {
@@ -187,7 +196,7 @@ final class TidenApiTest extends TestCase
         yield 'forbidden' => [403];
         yield 'not_found' => [404];
         yield 'payload_rejected' => [413];
-        yield 'internal_error' => [500];
+        yield 'conflict' => [409];
     }
 
     public function test_does_not_retry_on400(): void
