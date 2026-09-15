@@ -68,6 +68,15 @@ final class FinishDecision
     }
 
     /**
+     * True when this run failed to report results it had in hand — a batch the
+     * API refused, or one that could not be sent at all.
+     */
+    public function lostResults(): bool
+    {
+        return $this->failedResults > 0;
+    }
+
+    /**
      * True when paths were seen and none of them resolved — every case in this
      * run is unlinkable, which is a misconfiguration rather than an edge case.
      */

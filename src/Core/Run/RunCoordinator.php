@@ -148,6 +148,19 @@ final class RunCoordinator
                 return $decision;
             }
 
+            if ($decision->lostResults()) {
+                $this->logger->error(sprintf(
+                    'run %s is NOT being completed: %d result(s) never reached Tiden. The run is left '.
+                    'open on purpose — completing it would present a run that is missing results as a '.
+                    'finished one, and a green run short of a few hundred results is indistinguishable '.
+                    'from a run that was always that size. See the errors above for what was refused.',
+                    (string) ($this->runSeq ?? '?'),
+                    $decision->failedResults,
+                ));
+
+                return $decision;
+            }
+
             if ($decision->everyPathUnresolved()) {
                 $this->logger->error(sprintf(
                     'run %s is NOT being completed: not one of %d reported test files resolved to a path '.
@@ -196,8 +209,8 @@ final class RunCoordinator
         );
 
         if ($decision->failedResults > 0) {
-            $this->logger->warning($line.'. The run is INCOMPLETE: those results exist in the '
-                .'suite but not in Tiden, so anything they cover reads as uncovered.');
+            $this->logger->warning($line.'. Those results exist in the suite but not in Tiden, so '
+                .'anything they cover reads as uncovered.');
 
             return;
         }

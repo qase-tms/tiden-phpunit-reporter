@@ -156,8 +156,16 @@ At the end of a run the last worker writes the run-wide tally:
 [INFO] tiden: run 42 reported 9693 result(s) to Tiden; 0 failed to report
 ```
 
-Reconcile that against your runner's own test count. A non-zero failure count is logged at
-warning level and names the run as incomplete; the reporter never fails the suite over it.
+Reconcile that against your runner's own test count.
+
+**A run that failed to report results is deliberately left open**, the same way a run whose
+worker died is. An incomplete run cannot pass a quality gate, whereas a completed run quietly
+missing results reads as a pass — and a run a few hundred results short is indistinguishable
+from a run that was always that size. The reporter still never fails the suite over it: the
+run is left open, the reason is logged, and the test runner's own verdict is untouched.
+
+If an orchestrator completes the run instead (`TIDEN_RUN_COMPLETE=false`), that decision is
+yours and the reporter does not override it — read the tally above before completing.
 
 If a worker **dies** without reporting, the run is deliberately left open. An incomplete run
 cannot pass a quality gate, whereas a completed run quietly missing a worker's results looks

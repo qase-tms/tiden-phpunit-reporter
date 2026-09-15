@@ -353,6 +353,43 @@ final class RunReporterTest extends TestCase
     }
 
     /**
+     * The same rule the package already applies to a worker that died: an
+     * incomplete run cannot pass a quality gate, whereas a completed run quietly
+     * missing results reads as a pass. A lost batch is that case exactly.
+     */
+    public function test_a_run_that_lost_results_is_not_completed(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(200, '{"run":{"seqNum":9}}'),
+            new HttpResponse(400, '{"message":"rejected"}'),
+            new HttpResponse(200, '{"accepted":"1","duplicates":"0"}'),
+        ]);
+        $logger = new RecordingLogger;
+        $reporter = $this->reporter($transport, batchSize: 1, logger: $logger);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertSame(0, $transport->countRequestsTo(':complete'), 'the run is left open');
+        $this->assertTrue($logger->has('ERROR', 'is NOT being completed: 1 result(s) never reached Tiden'));
+    }
+
+    /** The converse, so the guard cannot quietly stop completing healthy runs. */
+    public function test_a_run_that_lost_nothing_is_completed(): void
+    {
+        $transport = $this->transport();
+        $reporter = $this->reporter($transport, batchSize: 1);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertSame(1, $transport->countRequestsTo(':complete'));
+    }
+
+    /**
      * Every result id that reached the wire, across all results:report calls.
      *
      * @return list<string>
