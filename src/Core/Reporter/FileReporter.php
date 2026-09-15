@@ -36,7 +36,12 @@ final class FileReporter implements InternalReporter
         $this->startRun();
 
         $file = rtrim($this->path, '/').'/'.$result->id.'.json';
-        $json = json_encode($this->transformer->toResultCreate($result), JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        // Same substitution as the wire path, so "report" mode keeps showing
+        // exactly what "tiden" mode would have sent.
+        $json = json_encode(
+            $this->transformer->toResultCreate($result),
+            JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE,
+        );
 
         if (@file_put_contents($file, $json) === false) {
             $this->logger->error(sprintf('could not write result to "%s"', $file));

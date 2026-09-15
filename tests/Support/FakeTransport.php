@@ -13,7 +13,11 @@ final class FakeTransport implements Transport
     /** @var list<array{url: string, json: string, headers: array<string, string>}> */
     public array $requests = [];
 
-    /** @param list<HttpResponse> $responses Replayed in order; the last one repeats. */
+    /**
+     * @param  list<HttpResponse|\Throwable>  $responses  Replayed in order; the last one repeats.
+     *                                                    A Throwable is thrown instead of returned, which is how a
+     *                                                    test reaches the paths that are not TidenException.
+     */
     public function __construct(private array $responses = []) {}
 
     public static function respondingWith(int $status, string $body = '{}', array $headers = []): self
@@ -29,7 +33,13 @@ final class FakeTransport implements Transport
             return new HttpResponse(200, '{}');
         }
 
-        return count($this->responses) === 1 ? $this->responses[0] : array_shift($this->responses);
+        $next = count($this->responses) === 1 ? $this->responses[0] : array_shift($this->responses);
+
+        if ($next instanceof \Throwable) {
+            throw $next;
+        }
+
+        return $next;
     }
 
     /**

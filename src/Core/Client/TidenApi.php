@@ -24,6 +24,19 @@ final class TidenApi
 
     private const BACKOFF_CAP_MS = 30_000;
 
+    /**
+     * Statuses worth sending the same body again for.
+     *
+     * 429 alone was not enough: the results endpoint carries no application
+     * rate limit, so in practice that set meant "never retry" while a single
+     * 503 from a proxy dropped a whole batch permanently. Everything absent
+     * here is deterministic — resending it four more times only delays the
+     * same refusal.
+     *
+     * @var list<int>
+     */
+    private const RETRYABLE_STATUSES = [408, 429, 502, 503, 504];
+
     public function __construct(
         private readonly string $baseUrl,
         private readonly string $token,
@@ -104,7 +117,15 @@ final class TidenApi
     /** @param array<string, mixed> $body */
     private function send(string $url, array $body): HttpResponse
     {
-        $json = json_encode($body === [] ? new \stdClass : $body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        // INVALID_UTF8_SUBSTITUTE, not a bare throw: a single malformed byte —
+        // from a truncated message, a stacktrace, a data-provider rendering —
+        // costs one character, not the whole batch it was travelling with.
+        // The server rejects invalid UTF-8 at its edge anyway, and it does so
+        // without logging, so sending it is never the better option.
+        $json = json_encode(
+            $body === [] ? new \stdClass : $body,
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE,
+        );
 
         $headers = [
             'Authorization' => 'Bearer '.$this->token,
@@ -121,10 +142,7 @@ final class TidenApi
                 return $response;
             }
 
-            // 429 is the only retryable status: everything else is either a
-            // permanent client error or a server error we should surface rather
-            // than paper over with four more identical requests.
-            if ($response->status === 429 && $attempt < self::MAX_RETRIES) {
+            if (in_array($response->status, self::RETRYABLE_STATUSES, true) && $attempt < self::MAX_RETRIES) {
                 $this->sleepMs($this->retryDelayMs($response, $backoffMs));
                 $backoffMs = min($backoffMs * 2, self::BACKOFF_CAP_MS);
 

@@ -14,6 +14,7 @@ use Tiden\PHPUnitReporter\Core\Logging\Logger;
 use Tiden\PHPUnitReporter\Core\Model\Status;
 use Tiden\PHPUnitReporter\Core\Model\TestResult;
 use Tiden\PHPUnitReporter\Core\Reporter\InternalReporter;
+use Tiden\PHPUnitReporter\Core\Utf8;
 use Tiden\PHPUnitReporter\Core\Uuid;
 
 /**
@@ -31,7 +32,14 @@ use Tiden\PHPUnitReporter\Core\Uuid;
  */
 final class Reporter
 {
-    /** Data-set renderings can be arbitrarily large; a params value should not be. */
+    /**
+     * Data-set renderings can be arbitrarily large; a params value should not be.
+     *
+     * The cut is a BYTE budget taken on a character boundary. Cutting mid
+     * sequence produces malformed UTF-8, and json_encode refuses to encode a
+     * body containing it — which used to cost the whole batch, not the one
+     * value.
+     */
     private const MAX_PARAM_LENGTH = 255;
 
     private static ?self $instance = null;
@@ -267,7 +275,7 @@ final class Reporter
             return $collapsed;
         }
 
-        return substr($collapsed, 0, self::MAX_PARAM_LENGTH - 1).'…';
+        return Utf8::truncate($collapsed, self::MAX_PARAM_LENGTH - 1).'…';
     }
 
     /** ParaTest labels its workers with TEST_TOKEN. */

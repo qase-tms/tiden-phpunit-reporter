@@ -97,14 +97,28 @@ final class StateStore
     /**
      * Mark this worker finished and decide whether it owns completion.
      *
-     * The file_path counters are accumulated here rather than read from the
-     * finishing worker's own tally: under ParaTest each worker only sees the
-     * tests it ran, so "no result anywhere carried a file_path" is only
-     * answerable across all of them.
+     * The file_path and result counters are accumulated here rather than read
+     * from the finishing worker's own tally: under ParaTest each worker only
+     * sees the tests it ran, so "no result anywhere carried a file_path" — and
+     * "how many results did this run actually get onto the wire" — are only
+     * answerable across all of them. The totals stay in the state file, which
+     * outlives the run, so a caller can reconcile them against the runner's own
+     * test count without parsing anyone's stderr.
      */
-    public function finish(int $pid, int $resolvedPaths = 0, int $omittedPaths = 0): FinishDecision
-    {
-        return $this->withLock(function (array $state) use ($pid, $resolvedPaths, $omittedPaths): array {
+    public function finish(
+        int $pid,
+        int $resolvedPaths = 0,
+        int $omittedPaths = 0,
+        int $reportedResults = 0,
+        int $failedResults = 0,
+    ): FinishDecision {
+        return $this->withLock(function (array $state) use (
+            $pid,
+            $resolvedPaths,
+            $omittedPaths,
+            $reportedResults,
+            $failedResults,
+        ): array {
             $existing = $state['workers'][(string) $pid] ?? null;
 
             $state['workers'][(string) $pid] = [
@@ -114,6 +128,8 @@ final class StateStore
 
             $state['resolvedPaths'] = (int) ($state['resolvedPaths'] ?? 0) + $resolvedPaths;
             $state['omittedPaths'] = (int) ($state['omittedPaths'] ?? 0) + $omittedPaths;
+            $state['reportedResults'] = (int) ($state['reportedResults'] ?? 0) + $reportedResults;
+            $state['failedResults'] = (int) ($state['failedResults'] ?? 0) + $failedResults;
 
             $alive = [];
             $dead = [];
@@ -137,17 +153,19 @@ final class StateStore
 
             $resolved = (int) $state['resolvedPaths'];
             $omitted = (int) $state['omittedPaths'];
+            $reported = (int) $state['reportedResults'];
+            $failed = (int) $state['failedResults'];
 
             // Someone still running may yet be the last one; let them decide.
             if ($alive !== []) {
-                return [$state, FinishDecision::wait($resolved, $omitted)];
+                return [$state, FinishDecision::wait($resolved, $omitted, $reported, $failed)];
             }
 
             if ($dead !== []) {
-                return [$state, FinishDecision::abandoned($dead, $resolved, $omitted)];
+                return [$state, FinishDecision::abandoned($dead, $resolved, $omitted, $reported, $failed)];
             }
 
-            return [$state, FinishDecision::complete($resolved, $omitted)];
+            return [$state, FinishDecision::complete($resolved, $omitted, $reported, $failed)];
         });
     }
 
@@ -258,7 +276,14 @@ final class StateStore
     /** @return array<string, mixed> */
     private static function emptyState(): array
     {
-        return ['runId' => null, 'owner' => self::owner(), 'completed' => false, 'workers' => []];
+        return [
+            'runId' => null,
+            'owner' => self::owner(),
+            'completed' => false,
+            'workers' => [],
+            'reportedResults' => 0,
+            'failedResults' => 0,
+        ];
     }
 
     /**

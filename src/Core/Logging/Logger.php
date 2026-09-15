@@ -24,9 +24,35 @@ class Logger
         private readonly string $logPath = 'logs/tiden.log',
     ) {}
 
-    public static function fromConfig(Config $config): self
+    /**
+     * @param  bool|null  $consoleIsDiscarded  Overridable for tests; detected from the
+     *                                         environment when null.
+     */
+    public static function fromConfig(Config $config, ?bool $consoleIsDiscarded = null): self
     {
-        return new self($config->logging->console, $config->logging->file, $config->debug);
+        $consoleIsDiscarded ??= self::runningUnderParaTest();
+
+        // Escalate to the log file on our own when the console cannot be heard.
+        //
+        // ParaTest gives each worker a pipe for stdout and stderr that the runner
+        // reads only if that worker CRASHES; on a green run the buffer is
+        // discarded unread. So every line this logger wrote about a failed
+        // upload went nowhere, and a whole batch could go missing with no signal
+        // on either side of the wire. Turning the file on here rather than
+        // asking each consuming repository to set TIDEN_LOGGING_FILE keeps the
+        // fix in one place: every ParaTest user has this problem, and none of
+        // them can see it.
+        $file = $config->logging->file || $consoleIsDiscarded;
+
+        return new self($config->logging->console, $file, $config->debug);
+    }
+
+    /** ParaTest labels its workers with TEST_TOKEN; nothing else in a PHPUnit run sets it. */
+    private static function runningUnderParaTest(): bool
+    {
+        $token = getenv('TEST_TOKEN');
+
+        return is_string($token) && trim($token) !== '';
     }
 
     public function info(string $message): void
