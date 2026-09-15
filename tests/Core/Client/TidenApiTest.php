@@ -132,6 +132,38 @@ final class TidenApiTest extends TestCase
         yield 'gateway_timeout' => [504];
     }
 
+    /**
+     * A connection that was refused, reset or timed out never produced a status,
+     * so the status table cannot see it. It is the most transient failure there
+     * is -- and the one that leaves no trace on the server either, because the
+     * request never arrived.
+     */
+    public function test_retries_a_connection_level_failure_and_then_succeeds(): void
+    {
+        $transport = new FakeTransport([
+            new ApiException('HTTP request to https://api.tiden.ai failed: Connection reset by peer'),
+            new HttpResponse(200, '{"accepted":"1","duplicates":"0"}'),
+        ]);
+
+        $this->api($transport)->reportResults(1, [['id' => 'x']]);
+
+        $this->assertCount(2, $transport->requests);
+    }
+
+    /** It still gives up eventually rather than retrying for ever. */
+    public function test_a_permanently_unreachable_endpoint_is_given_up_on(): void
+    {
+        $transport = new FakeTransport([new ApiException('HTTP request failed: Connection refused')]);
+
+        $this->expectException(ApiException::class);
+
+        try {
+            $this->api($transport)->reportResults(1, [['id' => 'x']]);
+        } finally {
+            $this->assertCount(6, $transport->requests, 'the initial attempt plus MAX_RETRIES');
+        }
+    }
+
     /** A deterministic refusal is not made truer by asking four more times. */
     #[DataProvider('permanentStatuses')]
     public function test_does_not_retry_a_permanent_status(int $status): void
