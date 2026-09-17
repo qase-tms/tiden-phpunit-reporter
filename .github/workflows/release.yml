@@ -29,9 +29,23 @@ name: Release
 # when CI concluded successfully. A red main therefore never becomes a Packagist
 # release.
 #
-# Note on the tag push: a tag pushed with GITHUB_TOKEN does not start other
-# GitHub Actions workflows, but it does fire repository webhooks — and
-# Packagist's GitHub integration is a webhook, so the sync still happens.
+# Why a deploy key and not GITHUB_TOKEN: the enterprise disables write
+# permissions for workflow tokens outright, so `permissions: contents: write`
+# is not merely unset here — it cannot be granted at the repo or the org level
+# (the API answers 409 "Write permissions for workflows are disabled by the
+# enterprise"). The push therefore authenticates with a repo-scoped deploy key.
+#
+# One-time setup, by anyone with admin on this repo:
+#
+#   ssh-keygen -t ed25519 -C 'tiden-phpunit-reporter release' -f release_key -N ''
+#   gh repo deploy-key add release_key.pub --allow-write --title 'release tagger'
+#   gh secret set RELEASE_SSH_KEY < release_key
+#   rm release_key release_key.pub
+#
+# Two consequences worth knowing. Packagist syncs either way, because its
+# GitHub integration is a webhook and webhooks fire for any push. But unlike a
+# GITHUB_TOKEN push, a deploy-key push DOES start workflows that trigger on
+# tags — nothing here does today, so adding one means thinking about recursion.
 
 on:
   workflow_run:
@@ -47,8 +61,10 @@ on:
         type: choice
         options: [auto, patch, minor, major]
 
+# Deliberately read-only: the tag is pushed with the deploy key above, not with
+# GITHUB_TOKEN, and asking for write here would be silently refused anyway.
 permissions:
-  contents: write # push the tag
+  contents: read
 
 # Never cancel a release in flight; let a second merge queue behind the first.
 concurrency: release
@@ -65,6 +81,11 @@ jobs:
           # The commit CI actually went green on, not whatever main points at now.
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0 # full history + tags: the bump is computed from both
+          # Configures the key and points `origin` at SSH, so the tag push below
+          # needs no further setup. Empty when the secret is missing, in which
+          # case checkout quietly falls back to the token — the tag step checks
+          # for that explicitly rather than letting it fail as a 403.
+          ssh-key: ${{ secrets.RELEASE_SSH_KEY }}
 
       - name: Work out the next version
         id: version
@@ -106,6 +127,7 @@ jobs:
           done < <(git log --no-merges --format='%B%x00' "$RANGE")
 
           forced=false
+          BUMP_INPUT="${BUMP_INPUT:-auto}"
           if [ "$BUMP_INPUT" != auto ]; then
             echo "Manual dispatch: forcing a $BUMP_INPUT bump (commits said: $bump)"
             bump="$BUMP_INPUT"
@@ -151,8 +173,15 @@ jobs:
           NEW: ${{ steps.version.outputs.version }}
           BUMP: ${{ steps.version.outputs.bump }}
           RANGE: ${{ steps.version.outputs.range }}
+          RELEASE_KEY: ${{ secrets.RELEASE_SSH_KEY }}
         run: |
           set -euo pipefail
+          # Checked here rather than up front so a docs-only merge, which
+          # releases nothing, does not fail on a secret it never needed.
+          if [ -z "${RELEASE_KEY:-}" ]; then
+            echo "::error::RELEASE_SSH_KEY is not set, so $NEW cannot be pushed — see the setup steps at the top of this workflow"
+            exit 1
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git tag -a "$NEW" -m "$NEW"
