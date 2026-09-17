@@ -29,16 +29,25 @@ final class TidenApi
      *
      * 429 alone was not enough: the results endpoint carries no application
      * rate limit, so in practice that set meant "never retry" while a single
-     * 503 from a proxy dropped a whole batch permanently. Everything absent
-     * here is deterministic — resending it four more times only delays the
-     * same refusal.
+     * 503 from a proxy dropped a whole batch permanently.
+     *
+     * 500 belongs here, though it reads like it should not. An unexpected
+     * server fault is not a considered refusal, and in the field it is
+     * intermittent: one batch in fifty fails while the rest of the same run
+     * succeeds. Resending is safe because every result carries a UUID the API
+     * treats as an idempotency key, so a batch that did land is deduplicated
+     * rather than doubled. A batch lost to a 500 is 200 results that the suite
+     * proved and nobody can see.
+     *
+     * What stays out is the deterministic 4xx: a rejected payload, a bad token,
+     * a completed run. Those are the same answer however many times you ask.
      *
      * Connection-level failures are retried too, but they are not in this list:
      * they never produce a status at all. See send().
      *
      * @var list<int>
      */
-    private const RETRYABLE_STATUSES = [408, 429, 502, 503, 504];
+    private const RETRYABLE_STATUSES = [408, 429, 500, 502, 503, 504];
 
     public function __construct(
         private readonly string $baseUrl,

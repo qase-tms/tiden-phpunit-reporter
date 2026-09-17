@@ -6,9 +6,6 @@ your test code. The PHP counterpart to
 [`tiden-javascript`](https://github.com/qase-tms/tiden-javascript) (Playwright, Vitest, Jest)
 and [`tiden-go`](https://github.com/qase-tms/tiden-go).
 
-> **Not published yet.** Nothing is on Packagist; the package name `tiden/phpunit-reporter`
-> is planned, not claimed.
-
 ```bash
 composer require --dev tiden/phpunit-reporter
 ```
@@ -157,6 +154,11 @@ At the end of a run the last worker writes the run-wide tally:
 ```
 
 Reconcile that against your runner's own test count.
+
+Transient failures are retried with backoff: connection errors, and 408, 429, 500, 502, 503 and
+504. A 5xx is included because an unexpected server fault is not a considered refusal and is
+intermittent in practice — and every result carries a UUID the API treats as an idempotency key,
+so a resend is deduplicated rather than doubled. Deterministic 4xx answers are not retried.
 
 **A run that failed to report results is deliberately left open**, the same way a run whose
 worker died is. An incomplete run cannot pass a quality gate, whereas a completed run quietly

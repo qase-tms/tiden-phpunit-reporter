@@ -119,9 +119,13 @@ final class RunReporterTest extends TestCase
      */
     public function test_a_failed_batch_is_not_resent_with_the_next_one(): void
     {
+        // 400, not 500: a 5xx is retried now, and a retry legitimately resends
+        // the same ids — that is what makes it a duplicate server-side rather
+        // than a new row. The property under test here is the other one: a
+        // batch given up on is not folded into the NEXT batch's payload.
         $transport = new FakeTransport([
             new HttpResponse(200, '{"run":{"seqNum":9}}'),
-            new HttpResponse(500, '{}'),
+            new HttpResponse(400, '{}'),
             new HttpResponse(200, '{"accepted":"1"}'),
         ]);
         $reporter = $this->reporter($transport, batchSize: 1);
@@ -264,9 +268,10 @@ final class RunReporterTest extends TestCase
      */
     public function test_the_run_summary_reconciles_what_was_reported_against_what_was_lost(): void
     {
+        // 400 so the batch is lost for good; a 5xx would be retried and land.
         $transport = new FakeTransport([
             new HttpResponse(200, '{"run":{"seqNum":9}}'),
-            new HttpResponse(500, '{}'),
+            new HttpResponse(400, '{}'),
             new HttpResponse(200, '{"accepted":"1","duplicates":"0"}'),
         ]);
         $logger = new RecordingLogger;
@@ -374,6 +379,32 @@ final class RunReporterTest extends TestCase
 
         $this->assertSame(0, $transport->countRequestsTo(':complete'), 'the run is left open');
         $this->assertTrue($logger->has('ERROR', 'is NOT being completed: 1 result(s) never reached Tiden'));
+    }
+
+    /**
+     * The failure this package was built to stop, reproduced from the field: a
+     * batch of 200 came back 500 while every other batch of the same run
+     * landed, and the run was completed 200 results short while the suite
+     * reported OK. Retrying the 5xx is what keeps those results.
+     */
+    public function test_a_batch_the_server_faults_on_is_retried_and_not_lost(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(200, '{"run":{"seqNum":9}}'),
+            new HttpResponse(500, '{"message":"internal error"}'),
+            new HttpResponse(200, '{"accepted":"2","duplicates":"0"}'),
+        ]);
+        $logger = new RecordingLogger;
+        $reporter = $this->reporter($transport, batchSize: 2, logger: $logger);
+
+        $reporter->startRun();
+        $reporter->addResult($this->makeResult());
+        $reporter->addResult($this->makeResult());
+        $reporter->complete();
+
+        $this->assertTrue($logger->has('INFO', 'reported 2 result(s) to Tiden; 0 failed to report'));
+        $this->assertFalse($logger->has('ERROR', 'failed to report'), 'nothing was given up on');
+        $this->assertSame(1, $transport->countRequestsTo(':complete'), 'and the run is completed');
     }
 
     /** The converse, so the guard cannot quietly stop completing healthy runs. */
