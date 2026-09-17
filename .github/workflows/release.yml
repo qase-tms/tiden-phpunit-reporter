@@ -1,0 +1,168 @@
+name: Release
+
+# Auto-tag on merge.
+#
+# There is no publish step for this package: Packagist mirrors the repo through
+# its GitHub integration, so a pushed `vX.Y.Z` tag IS the release. What was
+# missing was the tag itself — every version up to v0.1.3 was cut by hand. This
+# workflow cuts it from the commits a merge brought to main.
+#
+# The version comes from Conventional Commit subjects since the last tag:
+#
+#   feat!: / BREAKING CHANGE:   major   (see the 0.x rule below)
+#   feat:                       minor
+#   fix: perf: revert:          patch
+#   refactor: build: deps:      patch
+#   docs: chore: test: ci: style, or anything non-conventional
+#                               no release
+#
+# So a docs-only merge ships nothing, and a merge carrying `fix:` ships a patch.
+# Merge commits are skipped, so both merge-commit and squash-merge PRs work: the
+# first is read from the PR's own commits, the second from the squashed subject.
+#
+# The 0.x rule: while the major is 0, a breaking change bumps the MINOR
+# (0.1.3 -> 0.2.0) rather than jumping to 1.0.0. Declaring 1.0 is a one-way door
+# and not something a commit message should do by accident — use the manual
+# dispatch below with bump=major when you actually mean it.
+#
+# Gated on CI: this runs on CI's completion, not directly on the push, and only
+# when CI concluded successfully. A red main therefore never becomes a Packagist
+# release.
+#
+# Note on the tag push: a tag pushed with GITHUB_TOKEN does not start other
+# GitHub Actions workflows, but it does fire repository webhooks — and
+# Packagist's GitHub integration is a webhook, so the sync still happens.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump (auto = read the commits)'
+        required: false
+        default: auto
+        type: choice
+        options: [auto, patch, minor, major]
+
+permissions:
+  contents: write # push the tag
+
+# Never cancel a release in flight; let a second merge queue behind the first.
+concurrency: release
+
+jobs:
+  tag:
+    # For a dispatch there is no workflow_run payload, so the conclusion is
+    # empty — the `||` is what lets the manual path through.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The commit CI actually went green on, not whatever main points at now.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          fetch-depth: 0 # full history + tags: the bump is computed from both
+
+      - name: Work out the next version
+        id: version
+        env:
+          BUMP_INPUT: ${{ inputs.bump || 'auto' }}
+        run: |
+          set -euo pipefail
+
+          if git tag --points-at HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "HEAD is already released as $(git tag --points-at HEAD | head -n 1) — nothing to do"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # --merged HEAD keeps a tag from an unrelated branch out of the count.
+          LAST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname --merged HEAD | head -n 1 || true)
+          if [ -n "$LAST_TAG" ]; then
+            RANGE="$LAST_TAG..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+          echo "Last release: ${LAST_TAG:-<none>}"
+
+          bump=none
+          # git separates --format records with a newline, so every record after
+          # the first arrives with a leading blank line: take the first non-empty
+          # line as the subject, not literally line 1.
+          while IFS= read -r -d '' msg; do
+            subject=$(printf '%s\n' "$msg" | awk 'NF { print; exit }')
+            if printf '%s' "$subject" | grep -Eq '^[a-zA-Z]+(\([^)]*\))?!:' \
+               || printf '%s' "$msg" | grep -Eq '^BREAKING[ -]CHANGE:'; then
+              bump=major
+              break
+            elif printf '%s' "$subject" | grep -Eq '^feat(\([^)]*\))?:'; then
+              bump=minor
+            elif printf '%s' "$subject" | grep -Eq '^(fix|perf|revert|refactor|build|deps)(\([^)]*\))?:'; then
+              if [ "$bump" = none ]; then bump=patch; fi
+            fi
+          done < <(git log --no-merges --format='%B%x00' "$RANGE")
+
+          forced=false
+          if [ "$BUMP_INPUT" != auto ]; then
+            echo "Manual dispatch: forcing a $BUMP_INPUT bump (commits said: $bump)"
+            bump="$BUMP_INPUT"
+            forced=true
+          fi
+
+          if [ "$bump" = none ]; then
+            echo "No releasable commits since ${LAST_TAG:-the start of history} — no tag"
+            echo "No releasable commits since \`${LAST_TAG:-the start of history}\` — nothing released." >> "$GITHUB_STEP_SUMMARY"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CUR="${LAST_TAG#v}"
+          CUR="${CUR:-0.0.0}"
+          IFS=. read -r MA MI PA <<< "$CUR"
+
+          case "$bump" in
+            major)
+              # 0.x: a breaking COMMIT moves the minor rather than declaring 1.0.
+              # An explicit `bump=major` dispatch is a human saying 1.0, so it is
+              # taken literally — that is how you actually cut it.
+              if [ "$MA" -eq 0 ] && [ "$forced" = false ]; then
+                MI=$((MI + 1)); PA=0
+              else
+                MA=$((MA + 1)); MI=0; PA=0
+              fi
+              ;;
+            minor) MI=$((MI + 1)); PA=0 ;;
+            patch) PA=$((PA + 1)) ;;
+          esac
+
+          NEW="v$MA.$MI.$PA"
+          echo "Next release: $NEW ($bump)"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and push
+        if: steps.version.outputs.release == 'true'
+        env:
+          NEW: ${{ steps.version.outputs.version }}
+          BUMP: ${{ steps.version.outputs.bump }}
+          RANGE: ${{ steps.version.outputs.range }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$NEW" -m "$NEW"
+          git push origin "$NEW"
+          {
+            echo "### Released \`$NEW\` (\`$BUMP\`)"
+            echo
+            echo "Packagist picks this up from the tag; no publish step runs here."
+            echo
+            echo '```'
+            git log --no-merges --format='%s' "$RANGE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
