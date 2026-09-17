@@ -2,7 +2,11 @@ name: CI
 
 # Tests + composer manifest validation across the supported PHP x PHPUnit range.
 # No publish step: Packagist auto-updates from this public repo on a git tag
-# (one-time GitHub integration), so releasing is `git tag vX.Y.Z && git push --tags`.
+# (one-time GitHub integration), so the tag IS the release.
+#
+# This workflow is also the gate on that release: release.yml runs on this one's
+# completion and only tags when it concluded successfully, so renaming the `CI`
+# workflow or this job set means updating release.yml's `workflows:` list too.
 
 on:
   push:
