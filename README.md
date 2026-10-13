@@ -36,7 +36,7 @@ you meant to report, so a silent no-op would just cost you an afternoon.
 
 - Reports every test as it runs, from PHPUnit's event stream. Nothing parses a JUnit file.
 - Gives each case a stable, param-free signature so its history accumulates in one place.
-- Sends `fields["file_path"]`, the key Tiden joins requirements to tests on.
+- Sends `fields["file_path"]`, the key Tiden joins specs to tests on.
 - Creates the run, or joins one you already created, and completes it when the last worker
   is done — correctly under ParaTest.
 - Uploads in batches, retries on rate limits, and never lets its own failure fail your suite.
@@ -119,13 +119,13 @@ Changing the rule means bumping `php/v3`, not editing the pipeline: a signature 
 for an already-reported test forks its case and strands its history. `SignatureTest` holds a
 golden file that fails loudly if anything drifts.
 
-## Requirement linking
+## Spec linking
 
-Tiden joins requirements to tests by source file, so every result carries
+Tiden joins specs to tests by source file, so every result carries
 `fields["file_path"]` relative to `TIDEN_ROOT_DIR`.
 
 If a test file resolves outside that root the field is **omitted rather than guessed** — an
-unlinkable case is better than one linked to the wrong requirement — and you get a warning
+unlinkable case is better than one linked to the wrong spec — and you get a warning
 naming the file. If *no* result in the whole run resolved a path, that is a misconfiguration
 rather than an edge case, so the reporter says so and **declines to complete the run**. The
 usual cause is a containerised suite: PHPUnit sees `/application/tests/...` while

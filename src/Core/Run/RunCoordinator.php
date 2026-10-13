@@ -165,7 +165,7 @@ final class RunCoordinator
                 $this->logger->error(sprintf(
                     'run %s is NOT being completed: not one of %d reported test files resolved to a path '.
                     'under the configured root "%s", so every case in this run is unlinkable from its '.
-                    'requirements. Set TIDEN_ROOT_DIR to the directory your test paths are relative to '.
+                    'specs. Set TIDEN_ROOT_DIR to the directory your test paths are relative to '.
                     '(inside a container that is usually the mount point, not the host checkout).',
                     (string) ($this->runSeq ?? '?'),
                     $decision->omittedPaths,

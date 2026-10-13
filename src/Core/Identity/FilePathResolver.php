@@ -68,7 +68,7 @@ final class FilePathResolver
                 'file_path:'.$normalized,
                 sprintf(
                     'test file "%s" is not under the configured root "%s", so file_path is omitted and '.
-                    'its case cannot be linked to a requirement. Set TIDEN_ROOT_DIR to the directory the '.
+                    'its case cannot be linked to a spec. Set TIDEN_ROOT_DIR to the directory the '.
                     'test paths are relative to.',
                     $normalized,
                     rtrim($this->root, '/'),
