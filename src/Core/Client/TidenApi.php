@@ -49,6 +49,16 @@ final class TidenApi
      */
     private const RETRYABLE_STATUSES = [408, 429, 500, 502, 503, 504];
 
+    /**
+     * Set once the server has refused the "identity" field of a result. From
+     * then on it is left out of every batch this process sends.
+     *
+     * The server accepts identity only from the release that added it. A
+     * reporter newer than the server it talks to (a self-managed or rolled-back
+     * deployment) would otherwise lose every batch to a 400.
+     */
+    private bool $identityRejected = false;
+
     public function __construct(
         private readonly string $baseUrl,
         private readonly string $token,
@@ -96,7 +106,31 @@ final class TidenApi
      */
     public function reportResults(int $runSeq, array $results): array
     {
-        $response = $this->send($this->url(sprintf('/runs/%d/results:report', $runSeq)), ['results' => $results]);
+        $url = $this->url(sprintf('/runs/%d/results:report', $runSeq));
+
+        if ($this->identityRejected) {
+            $results = self::withoutIdentity($results);
+        }
+
+        try {
+            $response = $this->send($url, ['results' => $results]);
+        } catch (ApiException $e) {
+            if (! self::rejectsIdentity($e) || ! self::hasIdentity($results)) {
+                throw $e;
+            }
+
+            // Same batch, same result ids: if the first attempt did land in
+            // part, the API deduplicates, it does not double.
+            $this->identityRejected = true;
+            $this->logger?->warning(
+                'the server does not know the "identity" field yet, so results are sent without it '.
+                'from now on; each case is still identified by its signature.',
+            );
+
+            $results = self::withoutIdentity($results);
+            $response = $this->send($url, ['results' => $results]);
+        }
+
         $decoded = $response->json();
 
         // int64 fields arrive as strings.
@@ -119,6 +153,55 @@ final class TidenApi
     {
         // CompleteTestRunBody is an empty object but the body is required.
         $this->send($this->url(sprintf('/runs/%d:complete', $runSeq)), []);
+    }
+
+    /**
+     * A 400 from the gateway's strict JSON decoder, naming exactly this field.
+     * Any other 400 (a bad status, a locked run) is a real error and is not
+     * answered by dropping anything.
+     */
+    private static function rejectsIdentity(ApiException $e): bool
+    {
+        if ($e->statusCode !== 400 || $e->body === null) {
+            return false;
+        }
+
+        $needle = 'unknown field "identity"';
+
+        if (str_contains($e->body, $needle)) {
+            return true;
+        }
+
+        // In a JSON body the quotes arrive escaped, so look in the decoded message too.
+        $decoded = json_decode($e->body, true);
+        $message = is_array($decoded) ? ($decoded['message'] ?? null) : null;
+
+        return is_string($message) && str_contains($message, $needle);
+    }
+
+    /** @param list<array<string, mixed>> $results */
+    private static function hasIdentity(array $results): bool
+    {
+        foreach ($results as $result) {
+            if (array_key_exists('identity', $result)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $results
+     * @return list<array<string, mixed>>
+     */
+    private static function withoutIdentity(array $results): array
+    {
+        return array_map(static function (array $result): array {
+            unset($result['identity']);
+
+            return $result;
+        }, $results);
     }
 
     private function url(string $path): string

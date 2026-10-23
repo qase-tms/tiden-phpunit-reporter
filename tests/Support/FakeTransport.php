@@ -51,6 +51,13 @@ final class FakeTransport implements Transport
         return count(array_filter($this->requests, static fn (array $r): bool => str_ends_with($r['url'], $suffix)));
     }
 
+    public function lastRequestJson(): string
+    {
+        $last = end($this->requests);
+
+        return $last === false ? '' : $last['json'];
+    }
+
     /** @return array<string, mixed> */
     public function lastBody(): array
     {

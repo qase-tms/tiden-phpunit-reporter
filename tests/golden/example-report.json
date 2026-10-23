@@ -3,6 +3,19 @@
         "id": "<uuid>",
         "title": "A named case",
         "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_carries_metadata",
+        "identity": {
+            "language": "php",
+            "repository": "https://github.com/qase-tms/tiden-phpunit-reporter",
+            "scope": [
+                "Tiden",
+                "PHPUnitReporter",
+                "Examples",
+                "ExampleTest"
+            ],
+            "name": [
+                "test_it_carries_metadata"
+            ]
+        },
         "execution": {
             "status": "passed",
             "startTime": "<time>",
@@ -38,6 +51,19 @@
         "id": "<uuid>",
         "title": "test_it_fails_an_assertion",
         "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_fails_an_assertion",
+        "identity": {
+            "language": "php",
+            "repository": "https://github.com/qase-tms/tiden-phpunit-reporter",
+            "scope": [
+                "Tiden",
+                "PHPUnitReporter",
+                "Examples",
+                "ExampleTest"
+            ],
+            "name": [
+                "test_it_fails_an_assertion"
+            ]
+        },
         "execution": {
             "status": "failed",
             "startTime": "<time>",
@@ -72,6 +98,19 @@
         "id": "<uuid>",
         "title": "test_it_is_filed_under_a_custom_suite",
         "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_is_filed_under_a_custom_suite",
+        "identity": {
+            "language": "php",
+            "repository": "https://github.com/qase-tms/tiden-phpunit-reporter",
+            "scope": [
+                "Tiden",
+                "PHPUnitReporter",
+                "Examples",
+                "ExampleTest"
+            ],
+            "name": [
+                "test_it_is_filed_under_a_custom_suite"
+            ]
+        },
         "execution": {
             "status": "passed",
             "startTime": "<time>",
@@ -98,6 +137,19 @@
         "id": "<uuid>",
         "title": "test_it_is_skipped",
         "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_is_skipped",
+        "identity": {
+            "language": "php",
+            "repository": "https://github.com/qase-tms/tiden-phpunit-reporter",
+            "scope": [
+                "Tiden",
+                "PHPUnitReporter",
+                "Examples",
+                "ExampleTest"
+            ],
+            "name": [
+                "test_it_is_skipped"
+            ]
+        },
         "execution": {
             "status": "skipped",
             "startTime": "<time>",
@@ -131,6 +183,22 @@
         "id": "<uuid>",
         "title": "test_it_passes",
         "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_passes",
+        "testopsIds": [
+            42
+        ],
+        "identity": {
+            "language": "php",
+            "repository": "https://github.com/qase-tms/tiden-phpunit-reporter",
+            "scope": [
+                "Tiden",
+                "PHPUnitReporter",
+                "Examples",
+                "ExampleTest"
+            ],
+            "name": [
+                "test_it_passes"
+            ]
+        },
         "execution": {
             "status": "passed",
             "startTime": "<time>",
@@ -163,6 +231,19 @@
         "id": "<uuid>",
         "title": "test_it_runs_once_per_row",
         "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_runs_once_per_row",
+        "identity": {
+            "language": "php",
+            "repository": "https://github.com/qase-tms/tiden-phpunit-reporter",
+            "scope": [
+                "Tiden",
+                "PHPUnitReporter",
+                "Examples",
+                "ExampleTest"
+            ],
+            "name": [
+                "test_it_runs_once_per_row"
+            ]
+        },
         "execution": {
             "status": "passed",
             "startTime": "<time>",
@@ -199,6 +280,19 @@
         "id": "<uuid>",
         "title": "test_it_runs_once_per_row",
         "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_runs_once_per_row",
+        "identity": {
+            "language": "php",
+            "repository": "https://github.com/qase-tms/tiden-phpunit-reporter",
+            "scope": [
+                "Tiden",
+                "PHPUnitReporter",
+                "Examples",
+                "ExampleTest"
+            ],
+            "name": [
+                "test_it_runs_once_per_row"
+            ]
+        },
         "execution": {
             "status": "passed",
             "startTime": "<time>",
@@ -235,6 +329,19 @@
         "id": "<uuid>",
         "title": "test_it_throws_before_asserting",
         "signature": "php/v3::tiden::phpunitreporter::examples::exampletest::test_it_throws_before_asserting",
+        "identity": {
+            "language": "php",
+            "repository": "https://github.com/qase-tms/tiden-phpunit-reporter",
+            "scope": [
+                "Tiden",
+                "PHPUnitReporter",
+                "Examples",
+                "ExampleTest"
+            ],
+            "name": [
+                "test_it_throws_before_asserting"
+            ]
+        },
         "execution": {
             "status": "invalid",
             "startTime": "<time>",

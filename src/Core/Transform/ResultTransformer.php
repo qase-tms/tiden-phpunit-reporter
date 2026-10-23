@@ -16,6 +16,10 @@ use Tiden\PHPUnitReporter\Core\Model\TestResult;
  *  - execution.duration is an int64 sent AS A STRING, in milliseconds;
  *  - suitePath entries are OBJECTS {title}, root to leaf, never bare strings.
  *
+ * identity (language, repository, scope, name) is the parts the server builds the
+ * case key from; signature stays alongside it, unchanged, for servers that predate
+ * it. testopsIds comes from #[TidenId] and is the only way a test names its case.
+ *
  * externalId is deliberately never sent. No JS reporter sends it either, so
  * identity resolves through the signature branch and a live-doc-born case
  * carries external_id "s:<signature>". Sending a wrong externalId here would be
@@ -23,8 +27,16 @@ use Tiden\PHPUnitReporter\Core\Model\TestResult;
  */
 final class ResultTransformer
 {
-    /** @param array<string, string> $statusMapping */
-    public function __construct(private readonly array $statusMapping = []) {}
+    /**
+     * @param  array<string, string>  $statusMapping
+     * @param  string|null  $repository  The run's repository, raw. Without it the identity parts are not
+     *                                   sent at all: the server cannot place them, and parts with no
+     *                                   repository would only be refused.
+     */
+    public function __construct(
+        private readonly array $statusMapping = [],
+        private readonly ?string $repository = null,
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -72,6 +84,14 @@ final class ResultTransformer
             ),
             'defect' => false,
         ];
+
+        if ($result->testopsIds !== []) {
+            $body['testopsIds'] = $result->testopsIds;
+        }
+
+        if ($this->repository !== null && $result->identity !== null) {
+            $body['identity'] = $result->identity->toWire($this->repository);
+        }
 
         if ($fields !== []) {
             $body['fields'] = $fields;

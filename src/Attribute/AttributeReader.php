@@ -13,7 +13,7 @@ use Tiden\PHPUnitReporter\Core\Logging\Logger;
  * Reads Tiden attributes off a test class and method.
  *
  * Class-level attributes are read first so that a method-level #[Title] wins
- * while #[Suite], #[Tags] and #[Field] accumulate. Reflection failures are
+ * while #[Suite], #[Tags], #[Field] and #[TidenId] accumulate. Reflection failures are
  * logged and degrade to empty metadata: a missing #[Title] should never take a
  * test run down.
  *
@@ -58,6 +58,7 @@ final class AttributeReader
         $tags = [];
         $fields = [];
         $parameters = [];
+        $testopsIds = [];
 
         foreach ($attributes as $attribute) {
             switch (true) {
@@ -80,6 +81,22 @@ final class AttributeReader
                 case $attribute instanceof Parameter:
                     $parameters[$attribute->name] = $attribute->value;
                     break;
+                case $attribute instanceof TidenId:
+                    foreach ($attribute->ids as $id) {
+                        if ($id > 0) {
+                            $testopsIds[] = $id;
+
+                            continue;
+                        }
+
+                        $this->logger?->warning(sprintf(
+                            '#[TidenId(%d)] on %s::%s is ignored: a Tiden case id is a positive number.',
+                            $id,
+                            $className,
+                            $methodName,
+                        ));
+                    }
+                    break;
             }
         }
 
@@ -89,6 +106,7 @@ final class AttributeReader
             tags: array_values(array_unique($tags)),
             fields: $fields,
             parameters: $parameters,
+            testopsIds: array_values(array_unique($testopsIds)),
         );
     }
 

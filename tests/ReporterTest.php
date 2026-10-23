@@ -14,6 +14,7 @@ use Tiden\PHPUnitReporter\Attribute\AttributeReader;
 use Tiden\PHPUnitReporter\Core\Identity\FilePathResolver;
 use Tiden\PHPUnitReporter\Core\Model\Status;
 use Tiden\PHPUnitReporter\Reporter;
+use Tiden\PHPUnitReporter\Tests\Fixture\AttributedFixture;
 use Tiden\PHPUnitReporter\Tests\Support\RecordingInternalReporter;
 use Tiden\PHPUnitReporter\Tests\Support\RecordingLogger;
 use Tiden\PHPUnitReporter\Tiden;
@@ -52,6 +53,42 @@ final class ReporterTest extends TestCase
         $this->assertCount(1, $this->internal->results);
         $this->assertSame(Status::Passed, $this->internal->results[0]->status);
         $this->assertSame('php/v3::tests::unit::footest::testbar', $this->internal->results[0]->signature);
+    }
+
+    public function test_a_result_carries_the_raw_identity_parts_and_the_tiden_ids(): void
+    {
+        $test = $this->test('Tests\Unit\Billing\FooTest', 'testBar');
+
+        $this->reporter->startTest($test);
+        $this->reporter->completeTest($test);
+
+        $result = $this->internal->results[0];
+        $this->assertSame('php', $result->identity?->language);
+        $this->assertSame(['Tests', 'Unit', 'Billing', 'FooTest'], $result->identity->scope);
+        $this->assertSame(['testBar'], $result->identity->name);
+        $this->assertSame([], $result->testopsIds);
+    }
+
+    public function test_data_rows_have_the_same_identity_parts(): void
+    {
+        foreach (['first row', 'second row'] as $dataSetName) {
+            $test = $this->test('Tests\Unit\FooTest', 'testRows', $dataSetName);
+            $this->reporter->startTest($test);
+            $this->reporter->completeTest($test);
+        }
+
+        $this->assertEquals($this->internal->results[0]->identity, $this->internal->results[1]->identity);
+        $this->assertSame(['testRows'], $this->internal->results[0]->identity?->name);
+    }
+
+    public function test_a_tiden_id_attribute_becomes_the_results_testops_ids(): void
+    {
+        $test = $this->test(AttributedFixture::class, 'testPinned');
+
+        $this->reporter->startTest($test);
+        $this->reporter->completeTest($test);
+
+        $this->assertSame([42, 7], $this->internal->results[0]->testopsIds);
     }
 
     public function test_a_result_is_flushed_once_even_if_complete_is_called_twice(): void

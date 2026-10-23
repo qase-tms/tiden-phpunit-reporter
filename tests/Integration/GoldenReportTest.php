@@ -21,6 +21,9 @@ final class GoldenReportTest extends TestCase
 {
     private const GOLDEN = __DIR__.'/../golden/example-report.json';
 
+    /** Pinned, so the golden does not depend on the checkout or the CI this runs in. */
+    private const REPOSITORY = 'https://github.com/qase-tms/tiden-phpunit-reporter';
+
     private string $output;
 
     protected function setUp(): void
@@ -109,9 +112,10 @@ final class GoldenReportTest extends TestCase
         $root = dirname(__DIR__, 2);
 
         $command = sprintf(
-            'TIDEN_MODE=report TIDEN_REPORT_CONNECTION_PATH=%s TIDEN_ROOT_DIR=%s %s %s -c %s --no-coverage 2>&1',
+            'TIDEN_MODE=report TIDEN_REPORT_CONNECTION_PATH=%s TIDEN_ROOT_DIR=%s TIDEN_REPOSITORY=%s %s %s -c %s --no-coverage 2>&1',
             escapeshellarg($this->output),
             escapeshellarg($root),
+            escapeshellarg(self::REPOSITORY),
             escapeshellarg(PHP_BINARY),
             escapeshellarg($root.'/vendor/bin/phpunit'),
             escapeshellarg($root.'/examples/phpunit.xml'),

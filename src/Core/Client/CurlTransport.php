@@ -51,8 +51,6 @@ final class CurlTransport implements Transport
         $error = curl_error($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
 
-        curl_close($handle);
-
         if ($errorNumber !== 0 || ! is_string($body)) {
             throw new ApiException(sprintf('HTTP request to %s failed: %s', $url, $error !== '' ? $error : 'unknown curl error'));
         }

@@ -55,6 +55,7 @@ environment beats file beats parameter.
 | `TIDEN_API_TOKEN` | personal API token (`tfy_…`) |
 | `TIDEN_PRODUCT_ID` | the product to report into |
 | `TIDEN_ROOT_DIR` | directory test paths are relative to (default: cwd) |
+| `TIDEN_REPOSITORY` | the repository the tests belong to, e.g. `https://github.com/acme/shop` (default: found automatically, see "Case identity") |
 | `TIDEN_ROOT_SUITE` | a suite to nest everything under, e.g. `PHPUnit tests` |
 | `TIDEN_ENVIRONMENT` | environment slug, e.g. `ci` |
 | `TIDEN_RUN_ID` | join an existing run instead of creating one |
@@ -72,10 +73,10 @@ that already reports from JS can point PHP at the file it already has.
 
 ## Attributes
 
-All optional, all display-only — none of them changes which case a test is.
+All optional. All but `#[TidenId]` are display-only: none of them changes which case a test is.
 
 ```php
-use Tiden\PHPUnitReporter\Attribute\{Title, Suite, Tags, Field, Parameter};
+use Tiden\PHPUnitReporter\Attribute\{Title, Suite, Tags, Field, Parameter, TidenId};
 use Tiden\PHPUnitReporter\Tiden;
 
 #[Suite('Billing')]
@@ -85,6 +86,7 @@ final class InvoiceTest extends TestCase
     #[Tags('smoke', 'billing')]
     #[Field('layer', 'unit')]
     #[Parameter('currency', 'EUR')]
+    #[TidenId(42)]
     public function test_it_charges_once(): void
     {
         Tiden::comment('anything worth seeing next to the result');
@@ -92,6 +94,11 @@ final class InvoiceTest extends TestCase
     }
 }
 ```
+
+`#[TidenId(42)]` names the Tiden case (by its number) that this test is. It is sent as the
+result's `testopsIds`, and the server matches it before anything else, so the test keeps its case
+when it, its class or its namespace is renamed. Ids must be positive; others are dropped with a
+warning.
 
 `#[Suite]` replaces the namespace-derived path rather than extending it. `Tiden::title()` and
 `Tiden::comment()` are no-ops when the extension is not bootstrapped, so tests using them run
@@ -118,6 +125,36 @@ suite in CI would fork the history of every case in the product.
 Changing the rule means bumping `php/v3`, not editing the pipeline: a signature that changes
 for an already-reported test forks its case and strands its history. `SignatureTest` holds a
 golden file that fails loudly if anything drifts.
+
+### Identity parts and the repository
+
+Next to the signature, every result carries the parts of its identity, which the server builds
+its case key from:
+
+```json
+"identity": {
+  "language": "php",
+  "repository": "https://github.com/acme/shop",
+  "scope": ["App", "Billing", "InvoiceTest"],
+  "name": ["test_it_charges_once"]
+}
+```
+
+`scope` is the namespace segments and then the class, `name` is the method; both are as written
+in the code, because the normalising is the server's job. The data-set is never part of it. The
+repository is also sent as `clientMeta.gitRepository` on the run. It is looked up in this order:
+
+1. `TIDEN_REPOSITORY`;
+2. the CI's own variables: `GITHUB_SERVER_URL` + `GITHUB_REPOSITORY`, `CI_SERVER_URL` +
+   `CI_PROJECT_PATH` (GitLab), `BITBUCKET_GIT_HTTP_ORIGIN`, `BUILD_REPOSITORY_URI` (Azure);
+3. the `origin` remote in `.git/config` of the nearest directory above `TIDEN_ROOT_DIR` (default:
+   the working directory) that has a `.git`, a folder, or the file a worktree or a submodule has.
+
+A `user:password@` part in an `http(s)` URL is removed before it is sent. If none of these gives
+a repository, the parts are not sent, you get one warning, and the signature is still the whole
+identity, as before. A Tiden server that does not know `identity` yet answers 400 with
+`unknown field "identity"`; the reporter then sends the same batch again without it, and leaves
+it out for the rest of the process.
 
 ## Spec linking
 

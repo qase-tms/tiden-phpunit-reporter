@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tiden\PHPUnitReporter\Tests\Core\Transform;
 
 use PHPUnit\Framework\TestCase;
+use Tiden\PHPUnitReporter\Core\Identity\IdentityParts;
 use Tiden\PHPUnitReporter\Core\Model\Status;
 use Tiden\PHPUnitReporter\Core\Model\SuiteSegment;
 use Tiden\PHPUnitReporter\Core\Model\TestResult;
@@ -87,6 +88,46 @@ final class ResultTransformerTest extends TestCase
         $this->assertArrayNotHasKey('externalId', (new ResultTransformer)->toResultCreate($this->makeResult()));
     }
 
+    public function test_identity_is_sent_beside_the_unchanged_signature(): void
+    {
+        $result = $this->makeResult(IdentityParts::forMethod('App\\Billing\\FooTest', 'testBar'));
+
+        $body = (new ResultTransformer(repository: 'git@github.com:acme/shop.git'))->toResultCreate($result);
+
+        $this->assertSame([
+            'language' => 'php',
+            'repository' => 'git@github.com:acme/shop.git',
+            'scope' => ['App', 'Billing', 'FooTest'],
+            'name' => ['testBar'],
+        ], $body['identity']);
+        $this->assertSame('php/v3::footest::testbar', $body['signature']);
+    }
+
+    public function test_without_a_repository_there_is_no_identity(): void
+    {
+        $result = $this->makeResult(IdentityParts::forMethod('App\\FooTest', 'testBar'));
+
+        $this->assertArrayNotHasKey('identity', (new ResultTransformer)->toResultCreate($result));
+    }
+
+    public function test_a_result_with_no_parts_has_no_identity_even_with_a_repository(): void
+    {
+        $body = (new ResultTransformer(repository: 'https://github.com/acme/shop'))->toResultCreate($this->makeResult());
+
+        $this->assertArrayNotHasKey('identity', $body);
+    }
+
+    public function test_tiden_ids_are_sent_as_testops_ids(): void
+    {
+        $result = $this->makeResult();
+        $result->testopsIds = [42, 43];
+
+        $body = (new ResultTransformer)->toResultCreate($result);
+
+        $this->assertSame([42, 43], $body['testopsIds']);
+        $this->assertArrayNotHasKey('testopsIds', (new ResultTransformer)->toResultCreate($this->makeResult()));
+    }
+
     public function test_empty_collections_are_omitted_rather_than_sent_as_nulls(): void
     {
         $body = (new ResultTransformer)->toResultCreate($this->resultWithoutFilePath());
@@ -129,7 +170,7 @@ final class ResultTransformerTest extends TestCase
         $this->assertTrue(Uuid::isValid((string) (new ResultTransformer)->toResultCreate($this->makeResult())['id']));
     }
 
-    private function makeResult(): TestResult
+    private function makeResult(?IdentityParts $identity = null): TestResult
     {
         return new TestResult(
             id: Uuid::v4(),
@@ -139,6 +180,7 @@ final class ResultTransformerTest extends TestCase
             startTime: 1_800_000_000.0,
             filePath: 'tests/FooTest.php',
             thread: 'worker-3',
+            identity: $identity,
         );
     }
 

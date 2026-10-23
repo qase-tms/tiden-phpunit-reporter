@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 use Tiden\PHPUnitReporter\Core\Client\TidenApi;
+use Tiden\PHPUnitReporter\Core\Identity\IdentityParts;
 use Tiden\PHPUnitReporter\Core\Model\Status;
 use Tiden\PHPUnitReporter\Core\Model\SuiteSegment;
 use Tiden\PHPUnitReporter\Core\Model\TestResult;
@@ -72,14 +73,102 @@ final class OpenApiContractTest extends TestCase
         }
     }
 
+    /**
+     * Fields this reporter sends that the checked-out spec does not describe
+     * yet. ResultCreate.identity is added by tiden-app (proto field 16) and
+     * reaches this spec only when tiden-specs is regenerated from it.
+     *
+     * Each entry is checked both ways: it must be missing from the spec (so the
+     * list cannot rot into an excuse once the spec has caught up) and, until
+     * then, the reporter's shape is held to the documented contract below.
+     */
+    private const NOT_IN_SPEC_YET = ['identity'];
+
+    /** The four keys of ResultCreate.identity (TestIdentityParts), as the server contract names them. */
+    private const IDENTITY_KEYS = ['language', 'repository', 'scope', 'name'];
+
     public function test_every_field_the_transformer_emits_exists_on_result_create(): void
     {
         $properties = $this->schema('ResultCreate')['properties'];
-        $body = (new ResultTransformer)->toResultCreate($this->makeResult());
+        $body = (new ResultTransformer(repository: 'https://github.com/acme/shop'))->toResultCreate($this->makeResult());
 
         foreach (array_keys($body) as $field) {
+            if (in_array($field, self::NOT_IN_SPEC_YET, true)) {
+                continue;
+            }
+
             $this->assertArrayHasKey($field, $properties, sprintf('ResultCreate has no "%s"', $field));
         }
+    }
+
+    public function test_fields_not_in_the_spec_yet_are_really_missing_from_it(): void
+    {
+        $properties = $this->schema('ResultCreate')['properties'];
+
+        foreach (self::NOT_IN_SPEC_YET as $field) {
+            $this->assertArrayNotHasKey(
+                $field,
+                $properties,
+                sprintf('the spec now has "%s": drop it from NOT_IN_SPEC_YET so the check above covers it', $field),
+            );
+        }
+    }
+
+    /**
+     * Until the spec describes identity, what the reporter sends is checked
+     * against the server contract written down for it: four keys, strings for
+     * language and repository, string lists for scope and name. Once the spec
+     * has the schema, the same body is checked against the spec instead.
+     */
+    public function test_identity_has_the_shape_the_server_contract_names(): void
+    {
+        $result = $this->makeResult();
+        $identity = (new ResultTransformer(repository: 'https://github.com/acme/shop'))->toResultCreate($result)['identity'];
+
+        $this->assertIsArray($identity);
+        $this->assertSame(self::IDENTITY_KEYS, array_keys($identity));
+        $this->assertIsString($identity['language']);
+        $this->assertIsString($identity['repository']);
+        $this->assertTrue(array_is_list($identity['scope']) && $identity['scope'] !== []);
+        $this->assertTrue(array_is_list($identity['name']) && $identity['name'] !== []);
+
+        $ref = $this->schema('ResultCreate')['properties']['identity']['$ref'] ?? null;
+
+        if (! is_string($ref)) {
+            return;
+        }
+
+        $specProperties = $this->schema(basename($ref))['properties'];
+
+        $this->assertEqualsCanonicalizing(self::IDENTITY_KEYS, array_keys($specProperties));
+        $this->assertSame('array', $specProperties['scope']['type']);
+        $this->assertSame('array', $specProperties['name']['type']);
+        $this->assertSame('string', $specProperties['language']['type']);
+        $this->assertSame('string', $specProperties['repository']['type']);
+    }
+
+    /** #[TidenId] travels as testopsIds: the spec's own list of repository case seq_nums. */
+    public function test_tiden_ids_are_sent_as_the_int32_list_the_spec_names(): void
+    {
+        $property = $this->schema('ResultCreate')['properties']['testopsIds'];
+
+        $this->assertSame('array', $property['type']);
+        $this->assertSame('integer', $property['items']['type']);
+        $this->assertSame('int32', $property['items']['format'] ?? null);
+
+        $result = $this->makeResult();
+        $result->testopsIds = [42];
+
+        $this->assertSame([42], (new ResultTransformer)->toResultCreate($result)['testopsIds']);
+    }
+
+    /** clientMeta is a string-to-string map, so the repository is one more entry in it. */
+    public function test_the_git_repository_is_a_string_entry_of_the_run_client_meta(): void
+    {
+        $meta = $this->schema('CreateTestRunBody')['properties']['clientMeta'];
+
+        $this->assertSame('object', $meta['type']);
+        $this->assertSame('string', $meta['additionalProperties']['type']);
     }
 
     public function test_every_field_the_execution_carries_exists_on_result_execution(): void
@@ -193,6 +282,7 @@ final class OpenApiContractTest extends TestCase
             startTime: 1_800_000_000.0,
             filePath: 'tests/FooTest.php',
             thread: 'worker-1',
+            identity: IdentityParts::forMethod('Tests\\FooTest', 'testBar'),
         );
 
         $result->endTime = 1_800_000_001.0;
@@ -200,6 +290,7 @@ final class OpenApiContractTest extends TestCase
         $result->message = 'message';
         $result->params = ['dataset' => '0'];
         $result->tags = ['smoke'];
+        $result->testopsIds = [42];
 
         return $result;
     }

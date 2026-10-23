@@ -12,6 +12,7 @@ use Tiden\PHPUnitReporter\Core\Config\ConfigResolver;
 use Tiden\PHPUnitReporter\Core\Config\Mode;
 use Tiden\PHPUnitReporter\Core\Config\Resolution;
 use Tiden\PHPUnitReporter\Core\Identity\FilePathResolver;
+use Tiden\PHPUnitReporter\Core\Identity\RepositoryResolver;
 use Tiden\PHPUnitReporter\Core\Logging\Logger;
 use Tiden\PHPUnitReporter\Core\Run\RunCoordinator;
 use Tiden\PHPUnitReporter\Core\Run\StateStore;
@@ -22,6 +23,8 @@ final class ReporterFactory
     public function __construct(
         private readonly ?Transport $transport = null,
         private readonly ?int $pid = null,
+        /** @var array<string, string>|null CI variables for the repository lookup; the process environment when null. */
+        private readonly ?array $env = null,
     ) {}
 
     /**
@@ -61,13 +64,48 @@ final class ReporterFactory
             $mode = $fallback;
         }
 
-        $transformer = new ResultTransformer($config->statusMapping);
+        if ($mode === Mode::Off) {
+            return new NullReporter;
+        }
+
+        // Only a reporter that will send something looks for the repository:
+        // a disabled one must not read the file system at all.
+        $repository = $this->repository($config, $filePaths, $logger);
+        $transformer = new ResultTransformer($config->statusMapping, $repository);
 
         return match ($mode) {
             Mode::Report => new FileReporter((string) $config->report->path, $transformer, $logger),
-            Mode::Tiden => $this->createRunReporter($config, $transformer, $filePaths, $logger),
-            Mode::Off => new NullReporter,
+            Mode::Tiden => $this->createRunReporter($config, $transformer, $filePaths, $logger, $repository),
         };
+    }
+
+    /**
+     * The repository the results belong to, or null with one warning.
+     *
+     * Without it the identity parts are left out and the legacy signature is the
+     * whole identity, exactly as before this existed. That still works, so it is
+     * a warning and not an error, but it must not be silent: the user is giving
+     * up the rename-proof identity without knowing.
+     */
+    private function repository(Config $config, FilePathResolver $filePaths, Logger $logger): ?string
+    {
+        $repository = RepositoryResolver::resolve(
+            $config->repository,
+            $this->env ?? RepositoryResolver::environment(),
+            [$filePaths->root()],
+        );
+
+        if ($repository === null) {
+            $logger->warningOnce(
+                'repository',
+                'could not tell which git repository these tests belong to, so results are sent without '.
+                'their identity parts (the signature still identifies each case). Set TIDEN_REPOSITORY, '.
+                'for example https://github.com/<owner>/<repo>, or run inside a checkout that has an '.
+                '"origin" remote.',
+            );
+        }
+
+        return $repository;
     }
 
     /** The configured fallback, but only if its own requirements are met. */
@@ -85,6 +123,7 @@ final class ReporterFactory
         ResultTransformer $transformer,
         FilePathResolver $filePaths,
         Logger $logger,
+        ?string $repository,
     ): InternalReporter {
         $api = new TidenApi(
             baseUrl: (string) $config->api->baseUrl,
@@ -100,6 +139,7 @@ final class ReporterFactory
             state: new StateStore(StateStore::defaultPath($config->stateFile)),
             logger: $logger,
             pid: $this->pid ?? (getmypid() ?: 0),
+            repository: $repository,
         );
 
         return new RunReporter($config, $api, $coordinator, $transformer, $filePaths, $logger);

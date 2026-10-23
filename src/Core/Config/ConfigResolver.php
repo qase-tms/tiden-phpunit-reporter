@@ -62,6 +62,7 @@ final class ConfigResolver
             environment: self::string($raw, 'environment'),
             rootSuite: self::string($raw, 'rootSuite'),
             rootDir: self::string($raw, 'rootDir'),
+            repository: self::string($raw, 'repository'),
             statusMapping: $statusMapping,
             productId: self::string($tiden, 'product'),
             api: new ApiConfig(

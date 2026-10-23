@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tiden\PHPUnitReporter\Core\Model;
 
+use Tiden\PHPUnitReporter\Core\Identity\IdentityParts;
+
 /**
  * One attempt. Built when PHPUnit prepares a test, mutated by whichever outcome
  * event fires, and flushed when the test finishes.
@@ -21,6 +23,9 @@ final class TestResult
 
     /** @var list<string> */
     public array $tags = [];
+
+    /** @var list<int> Existing Tiden case seq_nums, from #[TidenId]. */
+    public array $testopsIds = [];
 
     public Status $status = Status::Passed;
 
@@ -42,6 +47,7 @@ final class TestResult
         public readonly float $startTime,
         public readonly ?string $filePath = null,
         public readonly ?string $thread = null,
+        public readonly ?IdentityParts $identity = null,
     ) {}
 
     public function durationMs(): int

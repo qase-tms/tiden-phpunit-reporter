@@ -8,6 +8,7 @@ use PHPUnit\Event\Code\TestMethod;
 use Tiden\PHPUnitReporter\Attribute\AttributeReader;
 use Tiden\PHPUnitReporter\Core\Exception\SignatureException;
 use Tiden\PHPUnitReporter\Core\Identity\FilePathResolver;
+use Tiden\PHPUnitReporter\Core\Identity\IdentityParts;
 use Tiden\PHPUnitReporter\Core\Identity\Signature;
 use Tiden\PHPUnitReporter\Core\Identity\SuitePath;
 use Tiden\PHPUnitReporter\Core\Logging\Logger;
@@ -216,10 +217,12 @@ final class Reporter
             startTime: microtime(true),
             filePath: $this->filePaths->relative($test->file()),
             thread: self::thread(),
+            identity: IdentityParts::forMethod($test->className(), $test->methodName()),
         );
 
         $result->fields = $metadata->fields;
         $result->tags = $metadata->tags;
+        $result->testopsIds = $metadata->testopsIds;
         $result->params = [...$this->dataProviderParams($test), ...$metadata->parameters];
 
         return $result;

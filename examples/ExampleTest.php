@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Tiden\PHPUnitReporter\Attribute\Field;
 use Tiden\PHPUnitReporter\Attribute\Suite;
 use Tiden\PHPUnitReporter\Attribute\Tags;
+use Tiden\PHPUnitReporter\Attribute\TidenId;
 use Tiden\PHPUnitReporter\Attribute\Title;
 use Tiden\PHPUnitReporter\Tiden;
 
@@ -22,6 +23,7 @@ use Tiden\PHPUnitReporter\Tiden;
  */
 final class ExampleTest extends TestCase
 {
+    #[TidenId(42)]
     public function test_it_passes(): void
     {
         $this->assertTrue(true);
