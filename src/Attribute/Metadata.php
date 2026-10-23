@@ -12,6 +12,7 @@ final class Metadata
      * @param  list<string>  $tags
      * @param  array<string, string>  $fields
      * @param  array<string, string>  $parameters
+     * @param  list<int>  $testopsIds
      */
     public function __construct(
         public readonly ?string $title = null,
@@ -19,5 +20,6 @@ final class Metadata
         public readonly array $tags = [],
         public readonly array $fields = [],
         public readonly array $parameters = [],
+        public readonly array $testopsIds = [],
     ) {}
 }

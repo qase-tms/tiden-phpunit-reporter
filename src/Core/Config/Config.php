@@ -24,5 +24,6 @@ final class Config
         public readonly ReportConfig $report = new ReportConfig,
         public readonly LoggingConfig $logging = new LoggingConfig,
         public readonly ?string $stateFile = null,
+        public readonly ?string $repository = null,
     ) {}
 }

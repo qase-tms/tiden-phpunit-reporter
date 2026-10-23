@@ -10,6 +10,7 @@ use Tiden\PHPUnitReporter\Core\Client\HttpResponse;
 use Tiden\PHPUnitReporter\Core\Client\TidenApi;
 use Tiden\PHPUnitReporter\Core\Exception\ApiException;
 use Tiden\PHPUnitReporter\Tests\Support\FakeTransport;
+use Tiden\PHPUnitReporter\Tests\Support\RecordingLogger;
 
 final class TidenApiTest extends TestCase
 {
@@ -239,14 +240,131 @@ final class TidenApiTest extends TestCase
         $this->api($transport)->completeRun(1);
     }
 
-    private function api(FakeTransport $transport, ?callable $sleeper = null): TidenApi
+    /**
+     * What the gateway's strict decoder says to a server that predates the
+     * field. In the body the quotes are escaped, which is why the match is made
+     * on the decoded message as well.
+     */
+    private const UNKNOWN_IDENTITY = '{"code":3,"message":"proto: (line 1:310): unknown field \"identity\"","details":[]}';
+
+    public function test_a_server_that_does_not_know_identity_gets_the_same_batch_without_it(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(400, self::UNKNOWN_IDENTITY),
+            new HttpResponse(200, '{"accepted":"2","duplicates":"0"}'),
+        ]);
+        $logger = new RecordingLogger;
+
+        $outcome = $this->api($transport, logger: $logger)->reportResults(1, $this->batchWithIdentity());
+
+        $this->assertSame(['accepted' => 2, 'duplicates' => 0], $outcome);
+        $this->assertCount(2, $transport->requests);
+
+        $first = json_decode($transport->requests[0]['json'], true)['results'];
+        $second = json_decode($transport->requests[1]['json'], true)['results'];
+
+        $this->assertArrayHasKey('identity', $first[0]);
+        $this->assertArrayNotHasKey('identity', $second[0]);
+        $this->assertArrayNotHasKey('identity', $second[1]);
+        $this->assertSame(array_column($first, 'id'), array_column($second, 'id'), 'same ids, so a retry deduplicates');
+        $this->assertSame($first[0]['signature'], $second[0]['signature']);
+        $this->assertSame([42], $second[0]['testopsIds'], 'only identity is dropped');
+        $this->assertTrue($logger->has('WARN', 'identity'));
+    }
+
+    public function test_after_a_refusal_identity_is_left_out_for_the_rest_of_the_process(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(400, self::UNKNOWN_IDENTITY),
+            new HttpResponse(200, '{"accepted":"2"}'),
+        ]);
+        $api = $this->api($transport);
+
+        $api->reportResults(1, $this->batchWithIdentity());
+        $api->reportResults(1, $this->batchWithIdentity());
+
+        $this->assertCount(3, $transport->requests, 'the second batch goes out once, without being refused first');
+        $this->assertArrayNotHasKey('identity', json_decode($transport->requests[2]['json'], true)['results'][0]);
+    }
+
+    public function test_the_unescaped_message_is_recognised_too(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(400, 'invalid JSON: unknown field "identity"'),
+            new HttpResponse(200, '{"accepted":"2"}'),
+        ]);
+
+        $this->api($transport)->reportResults(1, $this->batchWithIdentity());
+
+        $this->assertCount(2, $transport->requests);
+    }
+
+    public function test_any_other_400_is_still_an_error_and_keeps_identity(): void
+    {
+        $transport = new FakeTransport([
+            new HttpResponse(400, '{"code":3,"message":"proto: unknown field \"surprise\"","details":[]}'),
+            new HttpResponse(200, '{"accepted":"2"}'),
+        ]);
+        $api = $this->api($transport);
+
+        try {
+            $api->reportResults(1, $this->batchWithIdentity());
+            $this->fail('expected an ApiException');
+        } catch (ApiException $e) {
+            $this->assertSame(400, $e->statusCode);
+        }
+
+        $this->assertCount(1, $transport->requests, 'no resend for a 400 about something else');
+
+        $api->reportResults(1, $this->batchWithIdentity());
+        $this->assertArrayHasKey('identity', json_decode($transport->lastRequestJson(), true)['results'][0]);
+    }
+
+    public function test_a_second_refusal_after_dropping_identity_is_an_error(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(400, self::UNKNOWN_IDENTITY)]);
+
+        $this->expectException(ApiException::class);
+
+        try {
+            $this->api($transport)->reportResults(1, $this->batchWithIdentity());
+        } finally {
+            $this->assertCount(2, $transport->requests, 'one resend, not a loop');
+        }
+    }
+
+    public function test_a_batch_that_never_had_identity_is_not_resent(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(400, self::UNKNOWN_IDENTITY)]);
+
+        try {
+            $this->api($transport)->reportResults(1, [['id' => 'a'], ['id' => 'b']]);
+            $this->fail('expected an ApiException');
+        } catch (ApiException) {
+        }
+
+        $this->assertCount(1, $transport->requests);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function batchWithIdentity(): array
+    {
+        $identity = ['language' => 'php', 'repository' => 'https://github.com/acme/shop', 'scope' => ['App', 'FooTest'], 'name' => ['testBar']];
+
+        return [
+            ['id' => 'id-1', 'signature' => 'php/v3::app::footest::testbar', 'testopsIds' => [42], 'identity' => $identity],
+            ['id' => 'id-2', 'signature' => 'php/v3::app::footest::testbaz', 'identity' => $identity],
+        ];
+    }
+
+    private function api(FakeTransport $transport, ?callable $sleeper = null, ?RecordingLogger $logger = null): TidenApi
     {
         return new TidenApi(
             'https://api.tiden.ai',
             'tfy_secret',
             'prod-1',
             $transport,
-            null,
+            $logger,
             $sleeper === null ? static function (int $ms): void {} : \Closure::fromCallable($sleeper),
         );
     }

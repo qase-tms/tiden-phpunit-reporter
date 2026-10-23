@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Tiden\PHPUnitReporter\Attribute\AttributeReader;
 use Tiden\PHPUnitReporter\Attribute\Metadata;
 use Tiden\PHPUnitReporter\Tests\Fixture\AttributedFixture;
+use Tiden\PHPUnitReporter\Tests\Support\RecordingLogger;
 
 final class AttributeReaderTest extends TestCase
 {
@@ -54,6 +55,28 @@ final class AttributeReaderTest extends TestCase
         $this->assertNull($metadata->title);
         $this->assertSame(['Billing'], $metadata->suites);
         $this->assertSame(['regression'], $metadata->tags);
+    }
+
+    public function test_tiden_ids_accumulate_and_deduplicate_in_order(): void
+    {
+        $this->assertSame([42, 7], $this->read('testPinned')->testopsIds);
+        $this->assertSame([], $this->read('testPlain')->testopsIds);
+    }
+
+    public function test_a_tiden_id_does_not_change_the_display_metadata(): void
+    {
+        $this->assertSame(['Billing'], $this->read('testPinned')->suites);
+    }
+
+    public function test_ids_that_are_not_positive_are_dropped_with_a_warning(): void
+    {
+        $logger = new RecordingLogger;
+
+        $metadata = (new AttributeReader($logger))->read(AttributedFixture::class, 'testPinnedWithBadIds');
+
+        $this->assertSame([9], $metadata->testopsIds);
+        $this->assertTrue($logger->has('WARN', '#[TidenId(0)]'));
+        $this->assertTrue($logger->has('WARN', '#[TidenId(-3)]'));
     }
 
     /** A missing class must never take the run down; it degrades to no metadata. */

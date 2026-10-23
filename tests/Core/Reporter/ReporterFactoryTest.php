@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace Tiden\PHPUnitReporter\Tests\Core\Reporter;
 
 use PHPUnit\Framework\TestCase;
+use Tiden\PHPUnitReporter\Core\Client\HttpResponse;
 use Tiden\PHPUnitReporter\Core\Config\ConfigResolver;
 use Tiden\PHPUnitReporter\Core\Identity\FilePathResolver;
+use Tiden\PHPUnitReporter\Core\Identity\IdentityParts;
+use Tiden\PHPUnitReporter\Core\Model\SuiteSegment;
+use Tiden\PHPUnitReporter\Core\Model\TestResult;
 use Tiden\PHPUnitReporter\Core\Reporter\FileReporter;
 use Tiden\PHPUnitReporter\Core\Reporter\NullReporter;
 use Tiden\PHPUnitReporter\Core\Reporter\ReporterFactory;
 use Tiden\PHPUnitReporter\Core\Reporter\RunReporter;
+use Tiden\PHPUnitReporter\Core\Uuid;
 use Tiden\PHPUnitReporter\Tests\Support\FakeTransport;
 use Tiden\PHPUnitReporter\Tests\Support\RecordingLogger;
 
@@ -26,6 +31,7 @@ final class ReporterFactoryTest extends TestCase
 
     protected function tearDown(): void
     {
+        @unlink($this->directory.'/state.json');
         @rmdir($this->directory);
     }
 
@@ -102,6 +108,132 @@ final class ReporterFactoryTest extends TestCase
 
         $this->assertInstanceOf(NullReporter::class, $reporter);
         $this->assertTrue($logger->has('INFO', 'TIDEN_API_TOKEN'));
+    }
+
+    private const TIDEN = [
+        'TIDEN_MODE' => 'tiden',
+        'TIDEN_API_TOKEN' => 'tfy_x',
+        'TIDEN_PRODUCT_ID' => 'p1',
+        'TIDEN_BASE_URL' => 'https://api.tiden.ai',
+    ];
+
+    public function test_the_repository_reaches_the_run_and_every_result(): void
+    {
+        $transport = $this->tidenTransport();
+
+        $this->runOneResult(['TIDEN_REPOSITORY' => 'https://github.com/acme/shop'], [], $transport);
+
+        $run = json_decode($transport->requests[0]['json'], true);
+        $this->assertSame('https://github.com/acme/shop', $run['clientMeta']['gitRepository']);
+
+        $result = json_decode($transport->requests[1]['json'], true)['results'][0];
+        $this->assertSame(
+            ['language' => 'php', 'repository' => 'https://github.com/acme/shop', 'scope' => ['App', 'FooTest'], 'name' => ['testBar']],
+            $result['identity'],
+        );
+    }
+
+    public function test_the_repository_comes_from_the_ci_when_nothing_is_set(): void
+    {
+        $transport = $this->tidenTransport();
+
+        $this->runOneResult([], ['CI_SERVER_URL' => 'https://gitlab.com', 'CI_PROJECT_PATH' => 'acme/shop'], $transport);
+
+        $result = json_decode($transport->requests[1]['json'], true)['results'][0];
+        $this->assertSame('https://gitlab.com/acme/shop', $result['identity']['repository']);
+    }
+
+    public function test_the_repository_comes_from_the_checkout_of_the_root_dir(): void
+    {
+        mkdir($this->directory.'/.git');
+        file_put_contents($this->directory.'/.git/config', "[remote \"origin\"]\n\turl = git@github.com:acme/shop.git\n");
+        $transport = $this->tidenTransport();
+
+        $this->runOneResult([], [], $transport);
+
+        $result = json_decode($transport->requests[1]['json'], true)['results'][0];
+        $this->assertSame('git@github.com:acme/shop.git', $result['identity']['repository']);
+
+        unlink($this->directory.'/.git/config');
+        rmdir($this->directory.'/.git');
+    }
+
+    /**
+     * No repository: the parts cannot be placed, so they are not sent, and the
+     * user is told once. The signature still identifies every case.
+     */
+    public function test_without_a_repository_no_identity_is_sent_and_one_warning_is_logged(): void
+    {
+        $transport = $this->tidenTransport();
+        $logger = new RecordingLogger;
+
+        $this->runOneResult([], [], $transport, $logger, results: 3);
+
+        $run = json_decode($transport->requests[0]['json'], true);
+        $this->assertArrayNotHasKey('gitRepository', $run['clientMeta']);
+
+        foreach (json_decode($transport->requests[1]['json'], true)['results'] as $result) {
+            $this->assertArrayNotHasKey('identity', $result);
+            $this->assertSame('php/v3::app::footest::testbar', $result['signature']);
+        }
+
+        $warnings = array_filter($logger->lines, static fn (string $line): bool => str_starts_with($line, 'WARN ') && str_contains($line, 'TIDEN_REPOSITORY'));
+        $this->assertCount(1, $warnings);
+    }
+
+    public function test_a_disabled_reporter_does_not_look_for_a_repository(): void
+    {
+        $logger = new RecordingLogger;
+
+        (new ReporterFactory(new FakeTransport, env: []))->create(
+            (new ConfigResolver)->resolve([], [], $this->directory),
+            $logger,
+            new FilePathResolver($this->directory),
+        );
+
+        $this->assertSame([], $logger->lines);
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @param  array<string, string>  $ci
+     */
+    private function runOneResult(array $env, array $ci, FakeTransport $transport, ?RecordingLogger $logger = null, int $results = 1): void
+    {
+        $state = $this->directory.'/state.json';
+        $resolution = (new ConfigResolver)->resolve([...self::TIDEN, ...$env, 'TIDEN_STATE_FILE' => $state], [], $this->directory);
+
+        $reporter = (new ReporterFactory($transport, env: $ci))->create(
+            $resolution,
+            $logger ?? new RecordingLogger,
+            new FilePathResolver($this->directory),
+        );
+
+        $reporter->startRun();
+
+        for ($i = 0; $i < $results; $i++) {
+            $reporter->addResult(new TestResult(
+                id: Uuid::v4(),
+                signature: 'php/v3::app::footest::testbar',
+                title: 'testBar',
+                suitePath: [new SuiteSegment('App')],
+                startTime: 1_800_000_000.0,
+                identity: IdentityParts::forMethod('App\\FooTest', 'testBar'),
+            ));
+        }
+
+        $reporter->complete();
+
+        @unlink($state);
+        putenv('TIDEN_RUN_ID');
+    }
+
+    private function tidenTransport(): FakeTransport
+    {
+        return new FakeTransport([
+            new HttpResponse(200, '{"run":{"seqNum":5}}'),
+            new HttpResponse(200, '{"accepted":"3"}'),
+        ]);
     }
 
     /** @param array<string, string> $env */

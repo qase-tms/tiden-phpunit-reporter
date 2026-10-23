@@ -25,6 +25,8 @@ final class RunCoordinator
         private readonly StateStore $state,
         private readonly Logger $logger,
         private readonly int $pid,
+        /** The run's repository, raw; sent as clientMeta.gitRepository when known. */
+        private readonly ?string $repository = null,
     ) {}
 
     /**
@@ -93,6 +95,10 @@ final class RunCoordinator
             'framework' => 'phpunit',
             'reporter' => 'tiden/phpunit-reporter',
         ];
+
+        if ($this->repository !== null) {
+            $body['clientMeta']['gitRepository'] = $this->repository;
+        }
 
         return $body;
     }

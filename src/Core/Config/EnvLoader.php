@@ -37,6 +37,7 @@ final class EnvLoader
         'TIDEN_ENVIRONMENT',
         'TIDEN_ROOT_SUITE',
         'TIDEN_ROOT_DIR',
+        'TIDEN_REPOSITORY',
         'TIDEN_STATUS_MAPPING',
         'TIDEN_STATE_FILE',
         'TIDEN_LOGGING_CONSOLE',
@@ -68,6 +69,7 @@ final class EnvLoader
             'environment' => self::str($env, 'TIDEN_ENVIRONMENT'),
             'rootSuite' => self::str($env, 'TIDEN_ROOT_SUITE'),
             'rootDir' => self::str($env, 'TIDEN_ROOT_DIR'),
+            'repository' => self::str($env, 'TIDEN_REPOSITORY'),
             'statusMapping' => self::mapping(self::str($env, 'TIDEN_STATUS_MAPPING')),
             'stateFile' => self::str($env, 'TIDEN_STATE_FILE'),
             'logging' => [

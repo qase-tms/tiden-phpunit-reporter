@@ -93,6 +93,19 @@ final class ConfigResolverTest extends TestCase
         $this->assertSame('file-product', $resolution->config->productId);
     }
 
+    public function test_the_repository_follows_the_same_precedence_as_every_other_setting(): void
+    {
+        file_put_contents($this->directory.'/tiden.config.json', json_encode(['repository' => 'https://github.com/from/file']));
+        $parameters = (new EnvLoader)->load(['TIDEN_REPOSITORY' => 'https://github.com/from/params']);
+
+        $this->assertSame('https://github.com/from/params', (new ConfigResolver)->resolve([], $parameters, $this->directory.'/nowhere')->config->repository);
+        $this->assertSame('https://github.com/from/file', (new ConfigResolver)->resolve([], $parameters, $this->directory)->config->repository);
+        $this->assertSame(
+            'https://github.com/from/env',
+            (new ConfigResolver)->resolve(['TIDEN_REPOSITORY' => 'https://github.com/from/env'], $parameters, $this->directory)->config->repository,
+        );
+    }
+
     /** A later layer that does not define a value must not erase an earlier one. */
     public function test_an_undefined_value_never_clobbers_a_defined_one(): void
     {

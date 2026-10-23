@@ -143,7 +143,24 @@ final class RunCoordinatorTest extends TestCase
         $this->assertArrayNotHasKey('description', $body, 'unset values are omitted, not sent as empty strings');
     }
 
-    private function coordinator(FakeTransport $transport, ?RunConfig $run = null, ?RecordingLogger $logger = null, ?ProcessProbe $probe = null): RunCoordinator
+    public function test_the_create_body_names_the_git_repository_when_it_is_known(): void
+    {
+        $transport = new FakeTransport([new HttpResponse(200, '{"run":{"seqNum":11}}')]);
+
+        $body = $this->coordinator($transport, repository: 'https://github.com/acme/shop')->createRunBody();
+
+        $this->assertSame('https://github.com/acme/shop', $body['clientMeta']['gitRepository']);
+        $this->assertSame('phpunit', $body['clientMeta']['framework']);
+    }
+
+    public function test_the_create_body_has_no_git_repository_when_it_is_not(): void
+    {
+        $body = $this->coordinator(new FakeTransport)->createRunBody();
+
+        $this->assertArrayNotHasKey('gitRepository', $body['clientMeta']);
+    }
+
+    private function coordinator(FakeTransport $transport, ?RunConfig $run = null, ?RecordingLogger $logger = null, ?ProcessProbe $probe = null, ?string $repository = null): RunCoordinator
     {
         $config = new Config(
             environment: 'ci',
@@ -158,6 +175,7 @@ final class RunCoordinatorTest extends TestCase
             state: new StateStore($this->path, $probe),
             logger: $logger ?? new RecordingLogger,
             pid: getmypid() ?: 1,
+            repository: $repository,
         );
     }
 }

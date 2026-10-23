@@ -8,6 +8,7 @@ use Tiden\PHPUnitReporter\Attribute\Field;
 use Tiden\PHPUnitReporter\Attribute\Parameter;
 use Tiden\PHPUnitReporter\Attribute\Suite;
 use Tiden\PHPUnitReporter\Attribute\Tags;
+use Tiden\PHPUnitReporter\Attribute\TidenId;
 use Tiden\PHPUnitReporter\Attribute\Title;
 
 /**
@@ -26,6 +27,13 @@ class AttributedFixture
     public function testCharges(): void {}
 
     public function testPlain(): void {}
+
+    #[TidenId(42)]
+    #[TidenId(7, 42)]
+    public function testPinned(): void {}
+
+    #[TidenId(0, -3, 9)]
+    public function testPinnedWithBadIds(): void {}
 
     #[Field('file_path', 'somewhere/else.php')]
     public function testForgesAFilePath(): void {}
