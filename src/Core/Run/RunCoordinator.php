@@ -27,6 +27,8 @@ final class RunCoordinator
         private readonly int $pid,
         /** The run's repository, raw; sent as clientMeta.gitRepository when known. */
         private readonly ?string $repository = null,
+        /** The checkout's HEAD commit; sent as buildSha when run.buildSha is not configured. */
+        private readonly ?string $headCommit = null,
     ) {}
 
     /**
@@ -87,7 +89,7 @@ final class RunCoordinator
             'description' => $this->config->run->description,
             'environment' => $this->config->environment,
             'branch' => $this->config->run->branch,
-            'buildSha' => $this->config->run->buildSha,
+            'buildSha' => $this->config->run->buildSha ?? $this->headCommit,
         ], static fn (?string $value): bool => $value !== null && $value !== '');
 
         $body['startedAt'] = gmdate('Y-m-d\TH:i:s\Z');

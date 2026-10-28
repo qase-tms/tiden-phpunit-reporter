@@ -13,10 +13,11 @@ namespace Tiden\PHPUnitReporter\Core\Config;
  * the branch variable is TIDEN_BRANCH (not TIDEN_RUN_BRANCH), and the product
  * variable is TIDEN_PRODUCT_ID (not TIDEN_PRODUCT).
  *
- * TIDEN_BUILD_SHA and TIDEN_STATE_FILE have no commons counterpart yet;
- * buildSha exists on the wire (CreateTestRunBody.buildSha) and the state file
- * is a PHP-only need (ParaTest). Both are proposed additions to the shared
- * contract rather than PHP-private names.
+ * TIDEN_BUILD_SHA is shared with the JS reporters (commons 0.5.0) and the
+ * CLI's `tiden run`: every reporter resolves it as environment, then config,
+ * then the checkout's git HEAD. TIDEN_STATE_FILE has no commons counterpart:
+ * the state file is a PHP-only need (ParaTest), a proposed addition to the
+ * shared contract rather than a PHP-private name.
  */
 final class EnvLoader
 {

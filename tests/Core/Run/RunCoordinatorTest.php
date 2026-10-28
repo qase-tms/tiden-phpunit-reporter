@@ -143,6 +143,27 @@ final class RunCoordinatorTest extends TestCase
         $this->assertArrayNotHasKey('description', $body, 'unset values are omitted, not sent as empty strings');
     }
 
+    public function test_a_configured_build_sha_beats_the_checkout_head(): void
+    {
+        $body = $this->coordinator(new FakeTransport, new RunConfig(buildSha: 'abc123'), headCommit: 'f00d')->createRunBody();
+
+        $this->assertSame('abc123', $body['buildSha']);
+    }
+
+    public function test_the_checkout_head_is_the_build_sha_when_none_is_configured(): void
+    {
+        $body = $this->coordinator(new FakeTransport, headCommit: 'f00d')->createRunBody();
+
+        $this->assertSame('f00d', $body['buildSha']);
+    }
+
+    public function test_the_create_body_has_no_build_sha_when_nothing_gives_one(): void
+    {
+        $body = $this->coordinator(new FakeTransport)->createRunBody();
+
+        $this->assertArrayNotHasKey('buildSha', $body);
+    }
+
     public function test_the_create_body_names_the_git_repository_when_it_is_known(): void
     {
         $transport = new FakeTransport([new HttpResponse(200, '{"run":{"seqNum":11}}')]);
@@ -160,7 +181,7 @@ final class RunCoordinatorTest extends TestCase
         $this->assertArrayNotHasKey('gitRepository', $body['clientMeta']);
     }
 
-    private function coordinator(FakeTransport $transport, ?RunConfig $run = null, ?RecordingLogger $logger = null, ?ProcessProbe $probe = null, ?string $repository = null): RunCoordinator
+    private function coordinator(FakeTransport $transport, ?RunConfig $run = null, ?RecordingLogger $logger = null, ?ProcessProbe $probe = null, ?string $repository = null, ?string $headCommit = null): RunCoordinator
     {
         $config = new Config(
             environment: 'ci',
@@ -176,6 +197,7 @@ final class RunCoordinatorTest extends TestCase
             logger: $logger ?? new RecordingLogger,
             pid: getmypid() ?: 1,
             repository: $repository,
+            headCommit: $headCommit,
         );
     }
 }

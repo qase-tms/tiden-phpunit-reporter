@@ -198,6 +198,163 @@ final class RepositoryResolverTest extends TestCase
         yield 'ssh url keeps its git user' => ['ssh://git@github.com/acme/shop.git', 'ssh://git@github.com/acme/shop.git'];
     }
 
+    private const COMMIT = '3f786850e387550fdab836ed7e6dc881de23001b';
+
+    private const OTHER = '89e6c98d92887913cadf06b2adb97f26cde4849b';
+
+    public function test_head_on_a_branch_is_read_from_the_loose_ref(): void
+    {
+        $this->head($this->dir, "ref: refs/heads/main\n", ['refs/heads/main' => self::COMMIT."\n"]);
+        mkdir($this->dir.'/tests/Unit', 0777, true);
+
+        $this->assertSame(self::COMMIT, RepositoryResolver::headCommit([$this->dir.'/tests/Unit']));
+    }
+
+    public function test_head_on_a_branch_is_read_from_packed_refs_when_there_is_no_loose_ref(): void
+    {
+        $this->head($this->dir, "ref: refs/heads/main\n");
+        file_put_contents($this->dir.'/.git/packed-refs', implode("\n", [
+            '# pack-refs with: peeled fully-peeled sorted ',
+            self::OTHER.' refs/heads/feature',
+            self::COMMIT.' refs/heads/main',
+            self::OTHER.' refs/tags/v1.0.0',
+            '^'.self::COMMIT,
+            '',
+        ]));
+
+        $this->assertSame(self::COMMIT, RepositoryResolver::headCommit([$this->dir]));
+    }
+
+    /** git writes a loose ref when a packed branch moves, so the loose one is the current one. */
+    public function test_a_loose_ref_beats_the_packed_one(): void
+    {
+        $this->head($this->dir, "ref: refs/heads/main\n", ['refs/heads/main' => self::COMMIT."\n"]);
+        file_put_contents($this->dir.'/.git/packed-refs', self::OTHER." refs/heads/main\n");
+
+        $this->assertSame(self::COMMIT, RepositoryResolver::headCommit([$this->dir]));
+    }
+
+    /** CI checkouts of a tag or a pull request are usually detached: HEAD is the commit. */
+    public function test_a_detached_head_is_the_commit_itself(): void
+    {
+        $this->head($this->dir, strtoupper(self::COMMIT)."\n");
+
+        $this->assertSame(self::COMMIT, RepositoryResolver::headCommit([$this->dir]));
+    }
+
+    public function test_a_sha256_object_id_is_accepted(): void
+    {
+        $sha256 = str_repeat('ab12', 16);
+        $this->head($this->dir, $sha256."\n");
+
+        $this->assertSame($sha256, RepositoryResolver::headCommit([$this->dir]));
+    }
+
+    /** A linked worktree has its own HEAD but its branches live in the main repository. */
+    public function test_a_worktree_head_is_resolved_through_the_shared_refs(): void
+    {
+        $main = $this->dir.'/main';
+        $this->head($main, "ref: refs/heads/main\n", ['refs/heads/main' => self::OTHER."\n"]);
+        file_put_contents($main.'/.git/packed-refs', self::COMMIT." refs/heads/feature\n");
+
+        $worktreeGitDir = $main.'/.git/worktrees/feature';
+        mkdir($worktreeGitDir, 0777, true);
+        file_put_contents($worktreeGitDir.'/commondir', "../..\n");
+        file_put_contents($worktreeGitDir.'/HEAD', "ref: refs/heads/feature\n");
+
+        mkdir($this->dir.'/feature/src', 0777, true);
+        file_put_contents($this->dir.'/feature/.git', 'gitdir: '.$worktreeGitDir."\n");
+
+        $this->assertSame(self::COMMIT, RepositoryResolver::headCommit([$this->dir.'/feature/src']));
+        $this->assertSame(self::OTHER, RepositoryResolver::headCommit([$main]), 'the main checkout keeps its own HEAD');
+    }
+
+    /** A submodule is usually checked out detached, through a relative gitdir. */
+    public function test_a_submodule_head_is_read_through_its_relative_gitdir(): void
+    {
+        $modules = $this->dir.'/super/.git/modules/lib';
+        mkdir($modules, 0777, true);
+        file_put_contents($modules.'/HEAD', self::COMMIT."\n");
+
+        mkdir($this->dir.'/super/lib');
+        file_put_contents($this->dir.'/super/lib/.git', "gitdir: ../.git/modules/lib\n");
+
+        $this->assertSame(self::COMMIT, RepositoryResolver::headCommit([$this->dir.'/super/lib']));
+    }
+
+    /** A symbolic ref may name another ref; it is followed to the commit. */
+    public function test_a_chain_of_symbolic_refs_is_followed(): void
+    {
+        $this->head($this->dir, "ref: refs/heads/alias\n", [
+            'refs/heads/alias' => "ref: refs/heads/main\n",
+            'refs/heads/main' => self::COMMIT."\n",
+        ]);
+
+        $this->assertSame(self::COMMIT, RepositoryResolver::headCommit([$this->dir]));
+    }
+
+    /** "git init" with no commit yet: HEAD names a branch that does not exist. */
+    public function test_an_unborn_branch_has_no_commit(): void
+    {
+        $this->head($this->dir, "ref: refs/heads/main\n");
+
+        $this->assertNull(RepositoryResolver::headCommit([$this->dir]));
+    }
+
+    #[DataProvider('unreadableHeads')]
+    public function test_a_head_that_is_not_a_commit_or_a_ref_gives_nothing(string $head): void
+    {
+        file_put_contents($this->dir.'/outside', self::COMMIT."\n");
+        $this->head($this->dir, $head);
+
+        $this->assertNull(RepositoryResolver::headCommit([$this->dir]));
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function unreadableHeads(): iterable
+    {
+        yield 'abbreviated id' => [substr(self::COMMIT, 0, 12)."\n"];
+        yield 'not hex' => [str_repeat('z', 40)."\n"];
+        yield 'empty' => [''];
+        yield 'reftable placeholder' => ["ref: refs/heads/.invalid\n"];
+        yield 'ref outside refs/' => ["ref: ../outside\n"];
+        yield 'ref climbing out of refs/' => ["ref: refs/../../outside\n"];
+    }
+
+    public function test_the_next_start_directory_is_tried_when_the_first_has_no_head(): void
+    {
+        $this->head($this->dir.'/unborn', "ref: refs/heads/main\n");
+        $this->head($this->dir.'/repo', self::COMMIT."\n");
+
+        $this->assertSame(
+            self::COMMIT,
+            RepositoryResolver::headCommit([$this->dir.'/missing', false, '', $this->dir.'/unborn', $this->dir.'/repo']),
+        );
+    }
+
+    public function test_no_checkout_means_no_commit(): void
+    {
+        $this->assertNull(RepositoryResolver::headCommit([$this->dir]));
+        $this->assertNull(RepositoryResolver::headCommit([]));
+    }
+
+    /** @param array<string, string> $refs Ref name => file contents, written under the git directory. */
+    private function head(string $root, string $head, array $refs = []): void
+    {
+        mkdir($root.'/.git', 0777, true);
+        file_put_contents($root.'/.git/HEAD', $head);
+
+        foreach ($refs as $name => $contents) {
+            $file = $root.'/.git/'.$name;
+
+            if (! is_dir(dirname($file))) {
+                mkdir(dirname($file), 0777, true);
+            }
+
+            file_put_contents($file, $contents);
+        }
+    }
+
     private function checkout(string $root, string $origin, ?string $other = null): void
     {
         mkdir($root.'/.git', 0777, true);

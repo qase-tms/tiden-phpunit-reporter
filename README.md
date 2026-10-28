@@ -61,7 +61,8 @@ environment beats file beats parameter.
 | `TIDEN_RUN_ID` | join an existing run instead of creating one |
 | `TIDEN_RUN_COMPLETE` | `false` to leave completion to an orchestrator |
 | `TIDEN_RUN_TITLE`, `TIDEN_RUN_DESCRIPTION` | run metadata |
-| `TIDEN_BRANCH`, `TIDEN_BUILD_SHA` | git metadata for the run |
+| `TIDEN_BRANCH` | the branch the run belongs to |
+| `TIDEN_BUILD_SHA` | the commit the tests ran against (default: the checkout's git HEAD, see "Build SHA") |
 | `TIDEN_BATCH_SIZE` | results per request (default 200, max 2000) |
 | `TIDEN_STATUS_MAPPING` | e.g. `invalid=failed` |
 | `TIDEN_STATE_FILE` | where workers coordinate (see ParaTest below) |
@@ -70,6 +71,32 @@ environment beats file beats parameter.
 
 `tiden.config.json` uses the same nested shape as the JavaScript reporters, so a repository
 that already reports from JS can point PHP at the file it already has.
+
+### Build SHA
+
+The run's `buildSha` is the commit the tests ran against. A release's Quality Gate counts only
+the runs of the release's own commit, so a run without one counts toward no release. The
+reporter takes the first of:
+
+1. `TIDEN_BUILD_SHA`, set like every other setting: environment, then `tiden.run.buildSha`
+   in `tiden.config.json`, then a `phpunit.xml` parameter;
+2. the git HEAD of the nearest checkout above `TIDEN_ROOT_DIR` (default: the working
+   directory). A branch is followed to its commit through its ref file or `packed-refs`, a
+   detached HEAD is the commit itself, and the `.git` file of a worktree or a submodule is
+   followed through its `gitdir:`. The files are read directly; no `git` process is run.
+
+If neither gives a commit, `buildSha` is left out. That happens outside a checkout (a container
+image built without `.git`), on a branch with no commits yet, and in a repository that keeps
+its refs in a reftable. Set `TIDEN_BUILD_SHA` there. Set it too when HEAD is not the commit you
+release: on a GitHub Actions `pull_request` build, HEAD is the temporary merge commit, not the
+tip of the branch.
+
+A run joined through `TIDEN_RUN_ID` is not created by this reporter, so it sends no `buildSha`:
+the run carries whatever its creator sent. Create the run with the commit (for example
+`tiden run create --build-sha "$GITHUB_SHA"`, or with `TIDEN_BUILD_SHA` set).
+
+This is the order every Tiden reporter uses: the flag or environment variable, then the config
+file, then git HEAD.
 
 ## Attributes
 

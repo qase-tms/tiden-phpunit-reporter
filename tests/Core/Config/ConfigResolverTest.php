@@ -106,6 +106,17 @@ final class ConfigResolverTest extends TestCase
         );
     }
 
+    public function test_the_build_sha_follows_the_same_precedence_as_every_other_setting(): void
+    {
+        file_put_contents($this->directory.'/tiden.config.json', json_encode(['tiden' => ['run' => ['buildSha' => 'from-file']]]));
+        $parameters = (new EnvLoader)->load(['TIDEN_BUILD_SHA' => 'from-params']);
+
+        $this->assertSame('from-params', (new ConfigResolver)->resolve([], $parameters, $this->directory.'/nowhere')->config->run->buildSha);
+        $this->assertSame('from-file', (new ConfigResolver)->resolve([], $parameters, $this->directory)->config->run->buildSha);
+        $this->assertSame('from-env', (new ConfigResolver)->resolve(['TIDEN_BUILD_SHA' => 'from-env'], $parameters, $this->directory)->config->run->buildSha);
+        $this->assertNull((new ConfigResolver)->resolve(['TIDEN_BUILD_SHA' => '  '], [], $this->directory.'/nowhere')->config->run->buildSha);
+    }
+
     /** A later layer that does not define a value must not erase an earlier one. */
     public function test_an_undefined_value_never_clobbers_a_defined_one(): void
     {
