@@ -108,6 +108,26 @@ final class ReporterFactory
         return $repository;
     }
 
+    /**
+     * The commit checked out under the root directory, the run's build SHA when
+     * neither TIDEN_BUILD_SHA nor run.buildSha sets one. A Quality Gate that
+     * counts only a release's own commit cannot see a run without it.
+     */
+    private function headCommit(Config $config, FilePathResolver $filePaths, Logger $logger): ?string
+    {
+        if ($config->run->buildSha !== null) {
+            return null;
+        }
+
+        $commit = RepositoryResolver::headCommit([$filePaths->root()]);
+
+        if ($commit !== null) {
+            $logger->debug(sprintf('build SHA %s read from the git HEAD of the checkout', $commit));
+        }
+
+        return $commit;
+    }
+
     /** The configured fallback, but only if its own requirements are met. */
     private function viableFallback(Config $config): ?Mode
     {
@@ -140,6 +160,7 @@ final class ReporterFactory
             logger: $logger,
             pid: $this->pid ?? (getmypid() ?: 0),
             repository: $repository,
+            headCommit: $this->headCommit($config, $filePaths, $logger),
         );
 
         return new RunReporter($config, $api, $coordinator, $transformer, $filePaths, $logger);

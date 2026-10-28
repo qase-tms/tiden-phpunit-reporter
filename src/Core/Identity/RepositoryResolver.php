@@ -21,7 +21,10 @@ namespace Tiden\PHPUnitReporter\Core\Identity;
  * user:password@ part from an http(s) URL, because a clone made with a token
  * keeps that token in .git/config and it must not travel to the API.
  *
- * No process is spawned: the file is read directly, so the lookup works where
+ * The same checkout also gives the run its commit: headCommit() follows HEAD to
+ * the commit it names, used as the run's build SHA when none is configured.
+ *
+ * No process is spawned: the files are read directly, so the lookup works where
  * the git binary is missing and costs nothing in a ParaTest worker.
  */
 final class RepositoryResolver
@@ -63,6 +66,35 @@ final class RepositoryResolver
             ?? self::fromGitConfig($startDirs);
 
         return $found === null ? null : self::withoutCredentials($found);
+    }
+
+    /**
+     * The commit checked out in the nearest checkout above a start directory,
+     * as lowercase hex, or null.
+     *
+     * A detached HEAD holds the commit itself; an attached one names a ref,
+     * read from its loose file or else from packed-refs. A branch with no
+     * commit yet, and a repository that keeps its refs in a reftable, have no
+     * commit to read here and give null.
+     *
+     * @param  list<string|false>  $startDirs  Tried in order; the first one with a readable HEAD wins.
+     */
+    public static function headCommit(array $startDirs): ?string
+    {
+        foreach ($startDirs as $dir) {
+            if ($dir === false || $dir === '') {
+                continue;
+            }
+
+            $gitDir = self::findGitDir($dir);
+            $commit = $gitDir === null ? null : self::resolveHead($gitDir);
+
+            if ($commit !== null) {
+                return $commit;
+            }
+        }
+
+        return null;
     }
 
     /** @param array<string, string> $env */
@@ -145,19 +177,26 @@ final class RepositoryResolver
         }
     }
 
-    private static function originUrl(string $gitDir): ?string
+    /**
+     * Where the shared part of the repository lives. A linked worktree keeps
+     * its own gitdir, with its own HEAD, but shares the config and the refs of
+     * the main repository, found through "commondir". A submodule has no
+     * commondir: its gitdir (under .git/modules) is the whole repository.
+     */
+    private static function commonDir(string $gitDir): string
     {
-        // A linked worktree keeps its own gitdir but shares the repository's
-        // config, found through "commondir". A submodule has no commondir: its
-        // gitdir (under .git/modules) holds the config itself.
-        $configDir = $gitDir;
         $commonDir = $gitDir.'/commondir';
 
-        if (is_file($commonDir)) {
-            $configDir = self::absolute(trim((string) file_get_contents($commonDir)), $gitDir);
+        if (! is_file($commonDir)) {
+            return $gitDir;
         }
 
-        $config = $configDir.'/config';
+        return self::absolute(trim((string) file_get_contents($commonDir)), $gitDir);
+    }
+
+    private static function originUrl(string $gitDir): ?string
+    {
+        $config = self::commonDir($gitDir).'/config';
 
         if (! is_file($config)) {
             return null;
@@ -180,6 +219,73 @@ final class RepositoryResolver
         }
 
         return null;
+    }
+
+    private static function resolveHead(string $gitDir): ?string
+    {
+        $commonDir = self::commonDir($gitDir);
+        $ref = 'HEAD';
+
+        // A symbolic ref may name another one; git itself gives up after five.
+        for ($depth = 0; $depth < 5; $depth++) {
+            $value = self::readRef($gitDir, $commonDir, $ref);
+
+            if ($value === null) {
+                return null;
+            }
+
+            if (preg_match('/^ref:\s*(\S+)$/', $value, $m) !== 1) {
+                return self::commit($value);
+            }
+
+            $ref = $m[1];
+
+            // Only a ref under refs/ is followed, so HEAD cannot point the
+            // lookup at a file outside the repository.
+            if (! str_starts_with($ref, 'refs/') || str_contains($ref, '..')) {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    /** A ref's raw value: the per-worktree file, then the shared one, then packed-refs. */
+    private static function readRef(string $gitDir, string $commonDir, string $ref): ?string
+    {
+        foreach (array_unique([$gitDir, $commonDir]) as $dir) {
+            $file = $dir.'/'.$ref;
+
+            if (is_file($file)) {
+                return trim((string) file_get_contents($file));
+            }
+        }
+
+        $packed = $commonDir.'/packed-refs';
+
+        if (! is_file($packed)) {
+            return null;
+        }
+
+        // "<commit> <ref>" per line; "#" starts the header and "^" the peeled
+        // commit of the tag above, and neither ends in a ref name.
+        foreach (file($packed, FILE_IGNORE_NEW_LINES) ?: [] as $line) {
+            $parts = explode(' ', trim($line), 2);
+
+            if (count($parts) === 2 && $parts[1] === $ref) {
+                return $parts[0];
+            }
+        }
+
+        return null;
+    }
+
+    /** A full object id: 40 hex digits, or 64 in a SHA-256 repository. */
+    private static function commit(string $value): ?string
+    {
+        $value = strtolower($value);
+
+        return preg_match('/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/', $value) === 1 ? $value : null;
     }
 
     private static function absolute(string $path, string $base): string

@@ -32,6 +32,10 @@ final class ReporterFactoryTest extends TestCase
     protected function tearDown(): void
     {
         @unlink($this->directory.'/state.json');
+        @unlink($this->directory.'/tiden.config.json');
+        @unlink($this->directory.'/.git/HEAD');
+        @unlink($this->directory.'/.git/packed-refs');
+        @rmdir($this->directory.'/.git');
         @rmdir($this->directory);
     }
 
@@ -181,6 +185,52 @@ final class ReporterFactoryTest extends TestCase
         $this->assertCount(1, $warnings);
     }
 
+    private const HEAD = '3f786850e387550fdab836ed7e6dc881de23001b';
+
+    public function test_the_run_carries_the_checkout_head_when_no_build_sha_is_set(): void
+    {
+        $this->headCheckout();
+        $transport = $this->tidenTransport();
+
+        $this->runOneResult([], [], $transport);
+
+        $run = json_decode($transport->requests[0]['json'], true);
+        $this->assertSame(self::HEAD, $run['buildSha']);
+    }
+
+    public function test_tiden_build_sha_beats_the_checkout_head(): void
+    {
+        $this->headCheckout();
+        $transport = $this->tidenTransport();
+
+        $this->runOneResult(['TIDEN_BUILD_SHA' => 'from-env'], [], $transport);
+
+        $run = json_decode($transport->requests[0]['json'], true);
+        $this->assertSame('from-env', $run['buildSha']);
+    }
+
+    public function test_the_configured_build_sha_beats_the_checkout_head(): void
+    {
+        $this->headCheckout();
+        file_put_contents($this->directory.'/tiden.config.json', json_encode(['tiden' => ['run' => ['buildSha' => 'from-file']]]));
+        $transport = $this->tidenTransport();
+
+        $this->runOneResult([], [], $transport);
+
+        $run = json_decode($transport->requests[0]['json'], true);
+        $this->assertSame('from-file', $run['buildSha']);
+    }
+
+    public function test_the_run_has_no_build_sha_outside_a_checkout_when_none_is_set(): void
+    {
+        $transport = $this->tidenTransport();
+
+        $this->runOneResult([], [], $transport);
+
+        $run = json_decode($transport->requests[0]['json'], true);
+        $this->assertArrayNotHasKey('buildSha', $run);
+    }
+
     public function test_a_disabled_reporter_does_not_look_for_a_repository(): void
     {
         $logger = new RecordingLogger;
@@ -226,6 +276,14 @@ final class ReporterFactoryTest extends TestCase
 
         @unlink($state);
         putenv('TIDEN_RUN_ID');
+    }
+
+    /** A checkout of the root directory on branch main, whose ref is packed. */
+    private function headCheckout(): void
+    {
+        mkdir($this->directory.'/.git');
+        file_put_contents($this->directory.'/.git/HEAD', "ref: refs/heads/main\n");
+        file_put_contents($this->directory.'/.git/packed-refs', self::HEAD." refs/heads/main\n");
     }
 
     private function tidenTransport(): FakeTransport
