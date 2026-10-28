@@ -1,0 +1,45 @@
+src/Core/Run/RunCoordinator.php
+  s_bfb6801ff1af48::t_4bf272c6715aa4 92
+  s_bfb6801ff1af48::t_230d7d268f27a2 30-31
+src/Core/Identity/RepositoryResolver.php
+  s_bfb6801ff1af48::t_7a5c99ab422f68 24-27
+  s_bfb6801ff1af48::t_9bb4c82604860a 224-290
+  s_bfb6801ff1af48::t_1258b8b5323218 180-186,190-191,194-199
+  s_bfb6801ff1af48::t_bbe0365d8adbb5 71-99
+tests/Core/Identity/RepositoryResolverTest.php
+  s_bfb6801ff1af48::t_60c6e55ed8cb72 201-271,274-357
+  s_bfb6801ff1af48::t_f8b36e852183db 272-273
+src/Core/Reporter/ReporterFactory.php
+  s_bfb6801ff1af48::t_4f7997f3d5397b 111-130
+  s_bfb6801ff1af48::t_1327496ac20e33 163
+tests/Core/Config/ConfigResolverTest.php
+  s_bfb6801ff1af48::t_52e67144fc6aef 109-119
+tests/Core/Run/RunCoordinatorTest.php
+  s_bfb6801ff1af48::t_a9610af3d58129 146-166
+  s_bfb6801ff1af48::t_c55f43bfeb5fec 184
+  s_bfb6801ff1af48::t_c7caf95e597d4a 200
+tests/Core/Reporter/ReporterFactoryTest.php
+  s_bfb6801ff1af48::t_cf65de8b85f51a 188-233
+  s_bfb6801ff1af48::t_0d1d788d45d84d 281-288
+  s_bfb6801ff1af48::t_9bf06577a015ad 35-38
+README.md
+  s_bfb6801ff1af48::t_123fb09ea1e14f 64-65
+  s_bfb6801ff1af48::t_3f5cc3be0d9d88 75-80,83-93
+  s_bfb6801ff1af48::t_3d8417413bd627 81-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eecd44343262f21aa56c7ae478839b8eb2a5f288",
+  "prompts": {},
+  "sessions": {
+    "s_bfb6801ff1af48": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7e47eba3-64fc-458a-a0ea-31ec0851d32c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "prostoandrei <avaganov@qase.io>"
+    }
+  }
+}
