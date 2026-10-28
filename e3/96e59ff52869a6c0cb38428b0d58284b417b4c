@@ -1,0 +1,21 @@
+src/Core/Config/EnvLoader.php
+  s_183d5442023bc1::t_6a2f70e8c4b01c 16-20
+README.md
+  s_183d5442023bc1::t_6a2f70e8c4b01c 94-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e396e59ff52869a6c0cb38428b0d58284b417b4c",
+  "prompts": {},
+  "sessions": {
+    "s_183d5442023bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "85835d40-186d-470b-9432-9282dbd1bb18",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "prostoandrei <avaganov@qase.io>"
+    }
+  }
+}
