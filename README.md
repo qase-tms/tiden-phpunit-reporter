@@ -91,6 +91,13 @@ its refs in a reftable. Set `TIDEN_BUILD_SHA` there. Set it too when HEAD is not
 release: on a GitHub Actions `pull_request` build, HEAD is the temporary merge commit, not the
 tip of the branch.
 
+A run joined through `TIDEN_RUN_ID` is not created by this reporter, so it sends no `buildSha`:
+the run carries whatever its creator sent. Create the run with the commit (for example
+`tiden run create --build-sha "$GITHUB_SHA"`, or with `TIDEN_BUILD_SHA` set).
+
+This is the order every Tiden reporter uses: the flag or environment variable, then the config
+file, then git HEAD.
+
 ## Attributes
 
 All optional. All but `#[TidenId]` are display-only: none of them changes which case a test is.
