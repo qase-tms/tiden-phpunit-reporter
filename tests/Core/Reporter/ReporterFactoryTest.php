@@ -86,6 +86,8 @@ final class ReporterFactoryTest extends TestCase
 
         $this->assertTrue($logger->has('INFO', 'reporter disabled'));
         $this->assertTrue($logger->has('INFO', 'TIDEN_API_TOKEN'));
+        // An agent that read only the variable name took it as "no token here".
+        $this->assertTrue($logger->has('INFO', 'tiden run exec -- <command>'));
     }
 
     public function test_falls_back_to_the_configured_mode_when_the_primary_one_cannot_run(): void

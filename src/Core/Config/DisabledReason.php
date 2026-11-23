@@ -24,7 +24,8 @@ final class DisabledReason
     {
         return new self(
             'mode is "off"',
-            'set TIDEN_MODE=tiden (or "report" to write results to disk)',
+            'set TIDEN_MODE=tiden (or "report" to write results to disk), or run the suite as '
+                .'`tiden run exec -- <command>`, which sets it and the credentials from your tiden CLI login',
         );
     }
 
@@ -32,7 +33,12 @@ final class DisabledReason
     {
         return new self(
             sprintf('"tiden" mode requires %s, which is not set', $configKey),
-            sprintf('set %s (or %s in tiden.config.json)', $envName, $configKey),
+            sprintf(
+                'set %s (or %s in tiden.config.json), or run the suite as `tiden run exec -- <command>`, '
+                .'which passes it from your tiden CLI login',
+                $envName,
+                $configKey,
+            ),
         );
     }
 
