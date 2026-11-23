@@ -1,0 +1,21 @@
+src/Core/Config/DisabledReason.php
+  s_7f4c69b7731c0b::t_7222f00bb8c949 27-28,36-41
+tests/Core/Reporter/ReporterFactoryTest.php
+  s_7f4c69b7731c0b::t_440a5727dd5393 89-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc2acaa0987347e77aa81829626f16fb8d4866a7",
+  "prompts": {},
+  "sessions": {
+    "s_7f4c69b7731c0b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b8450c8-8517-495a-8db6-09e645f146dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "prostoandrei <avaganov@qase.io>"
+    }
+  }
+}
