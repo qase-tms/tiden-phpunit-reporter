@@ -15,6 +15,18 @@ namespace Tiden\PHPUnitReporter\Core\Config;
  */
 final class DisabledReason
 {
+    /**
+     * The other way to enable it: `tiden run exec` sets TIDEN_MODE, the token
+     * and base URL from the CLI login, and the product from `--product-id` or
+     * the repository's link. Named in full because an agent that read only a
+     * variable name went looking for a token instead (AICP-135).
+     */
+    private const RUN_EXEC = 'run the suite as `tiden run exec -- <command>`';
+
+    public const FROM_LOGIN = 'your tiden CLI login';
+
+    public const FROM_REPOSITORY_LINK = 'this repository\'s Tiden link (`tiden setup`)';
+
     public function __construct(
         public readonly string $reason,
         public readonly string $remedy,
@@ -24,15 +36,31 @@ final class DisabledReason
     {
         return new self(
             'mode is "off"',
-            'set TIDEN_MODE=tiden (or "report" to write results to disk)',
+            sprintf(
+                'set TIDEN_MODE=tiden (or "report" to write results to disk), or %s, which sets it, '
+                .'the credentials from %s and the product from %s',
+                self::RUN_EXEC,
+                self::FROM_LOGIN,
+                self::FROM_REPOSITORY_LINK,
+            ),
         );
     }
 
-    public static function missingSetting(string $configKey, string $envName): self
+    /**
+     * @param  string  $runExecSource  where `tiden run exec` takes this setting
+     *                                 from: FROM_LOGIN or FROM_REPOSITORY_LINK
+     */
+    public static function missingSetting(string $configKey, string $envName, string $runExecSource): self
     {
         return new self(
             sprintf('"tiden" mode requires %s, which is not set', $configKey),
-            sprintf('set %s (or %s in tiden.config.json)', $envName, $configKey),
+            sprintf(
+                'set %s (or %s in tiden.config.json), or %s, which passes it from %s',
+                $envName,
+                $configKey,
+                self::RUN_EXEC,
+                $runExecSource,
+            ),
         );
     }
 

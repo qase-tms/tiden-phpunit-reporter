@@ -73,6 +73,35 @@ final class ConfigResolverTest extends TestCase
         $this->assertTrue($resolver->resolve($env, [], $this->directory)->isEnabled());
     }
 
+    /**
+     * Every remedy also names `tiden run exec`, and says where it takes the
+     * setting from: the token and base URL from the CLI login, the product from
+     * the repository's link. An agent that read only the variable name went
+     * looking for a token instead of running the suite through the CLI.
+     */
+    public function test_every_remedy_names_run_exec_and_where_it_takes_the_setting_from(): void
+    {
+        $resolver = new ConfigResolver;
+        $message = fn (array $env): string => $resolver->resolve($env, [], $this->directory)->disabled?->message() ?? '';
+
+        $modeOff = $message(['TIDEN_MODE' => 'off']);
+        $this->assertStringContainsString('mode is "off"', $modeOff);
+        $this->assertStringContainsString('or run the suite as `tiden run exec -- <command>`, which sets it, '
+            .'the credentials from your tiden CLI login and the product from this repository\'s Tiden link', $modeOff);
+
+        $env = ['TIDEN_MODE' => 'tiden'];
+        $this->assertStringContainsString('TIDEN_API_TOKEN (or tiden.api.token in tiden.config.json), '
+            .'or run the suite as `tiden run exec -- <command>`, which passes it from your tiden CLI login', $message($env));
+
+        $env['TIDEN_API_TOKEN'] = 'tfy_x';
+        $this->assertStringContainsString('TIDEN_PRODUCT_ID (or tiden.product in tiden.config.json), '
+            .'or run the suite as `tiden run exec -- <command>`, which passes it from this repository\'s Tiden link', $message($env));
+
+        $env['TIDEN_PRODUCT_ID'] = 'p1';
+        $this->assertStringContainsString('TIDEN_BASE_URL (or tiden.api.baseUrl in tiden.config.json), '
+            .'or run the suite as `tiden run exec -- <command>`, which passes it from your tiden CLI login', $message($env));
+    }
+
     public function test_environment_beats_the_config_file_which_beats_phpunit_parameters(): void
     {
         file_put_contents($this->directory.'/tiden.config.json', json_encode([

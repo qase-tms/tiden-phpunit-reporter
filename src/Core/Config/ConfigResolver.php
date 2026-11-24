@@ -103,9 +103,9 @@ final class ConfigResolver
             Mode::Off => DisabledReason::modeOff(),
             Mode::Report => $config->report->path === null ? DisabledReason::missingReportPath() : null,
             Mode::Tiden => match (true) {
-                $config->api->token === null => DisabledReason::missingSetting('tiden.api.token', 'TIDEN_API_TOKEN'),
-                $config->productId === null => DisabledReason::missingSetting('tiden.product', 'TIDEN_PRODUCT_ID'),
-                $config->api->baseUrl === null => DisabledReason::missingSetting('tiden.api.baseUrl', 'TIDEN_BASE_URL'),
+                $config->api->token === null => DisabledReason::missingSetting('tiden.api.token', 'TIDEN_API_TOKEN', DisabledReason::FROM_LOGIN),
+                $config->productId === null => DisabledReason::missingSetting('tiden.product', 'TIDEN_PRODUCT_ID', DisabledReason::FROM_REPOSITORY_LINK),
+                $config->api->baseUrl === null => DisabledReason::missingSetting('tiden.api.baseUrl', 'TIDEN_BASE_URL', DisabledReason::FROM_LOGIN),
                 default => null,
             },
         };

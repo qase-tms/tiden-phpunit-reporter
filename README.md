@@ -28,6 +28,12 @@ export TIDEN_PRODUCT_ID=<your product uuid>
 vendor/bin/phpunit
 ```
 
+Or, where the [`tiden` CLI](https://docs.tiden.ai/docs/how-to/setup-cli) is logged in, run the suite
+through it and set none of them: `tiden run exec -- vendor/bin/phpunit`. It sets the mode, the
+token and base URL from your login, the product from `--product-id` or the repository's link
+(`tiden setup`), and creates and completes the run. This works for a wrapper too, such as
+`tiden run exec -- make test`.
+
 **With none of those set the extension does nothing and says nothing.** Local development is
 unaffected. If you set some of them but not all, it tells you exactly which one is missing —
 you meant to report, so a silent no-op would just cost you an afternoon.
